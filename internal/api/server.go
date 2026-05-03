@@ -341,6 +341,8 @@ func (s *Server) setupRoutes() {
 	s.engine.HEAD("/healthz", healthzHandler)
 
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
+	s.engine.GET("/codex-extract.html", s.mgmt.ServeCodexExtractionPage)
+	s.engine.POST("/v0/codex-extract", s.mgmt.ExtractCodexAuthFiles)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)
@@ -646,6 +648,12 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/auth-files", s.mgmt.DeleteAuthFile)
 		mgmt.PATCH("/auth-files/status", s.mgmt.PatchAuthFileStatus)
 		mgmt.PATCH("/auth-files/fields", s.mgmt.PatchAuthFileFields)
+		mgmt.GET("/codex-cards", s.mgmt.ListCodexCards)
+		mgmt.POST("/codex-cards/generate", s.mgmt.GenerateCodexCards)
+		mgmt.POST("/codex-cards/import", s.mgmt.ImportCodexCards)
+		mgmt.POST("/codex-cards/delete", s.mgmt.DeleteCodexCards)
+		mgmt.POST("/codex-cards/export", s.mgmt.ExportCodexCards)
+		mgmt.POST("/codex-extract", s.mgmt.ExtractCodexAuthFiles)
 		mgmt.POST("/vertex/import", s.mgmt.ImportVertexCredential)
 
 		mgmt.GET("/anthropic-auth-url", s.mgmt.RequestAnthropicToken)
@@ -695,7 +703,7 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	c.File(filePath)
+	s.serveManagementControlPanelAsset(c, filePath)
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {

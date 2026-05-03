@@ -1215,6 +1215,87 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 	return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "no auth available"}
 }
 
+// ExecuteWithAuthID performs a non-streaming execution against one specific
+// auth entry. It bypasses provider/model selector discovery because the caller
+// already selected the credential, while preserving model aliasing, per-auth
+// transport injection, execution result tracking, and retry/cooldown bookkeeping.
+func (m *Manager) ExecuteWithAuthID(ctx context.Context, authID string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
+	if m == nil {
+		return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "manager is nil"}
+	}
+	authID = strings.TrimSpace(authID)
+	if authID == "" {
+		return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "auth id is empty"}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	auth, okAuth := m.GetByID(authID)
+	if !okAuth || auth == nil {
+		return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "auth not found"}
+	}
+	if auth.Disabled || auth.Status == StatusDisabled {
+		return cliproxyexecutor.Response{}, &Error{Code: "auth_unavailable", Message: "auth disabled"}
+	}
+	provider := strings.ToLower(strings.TrimSpace(auth.Provider))
+	if provider == "" {
+		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "auth provider is empty"}
+	}
+	executor, okExecutor := m.Executor(provider)
+	if !okExecutor || executor == nil {
+		return cliproxyexecutor.Response{}, &Error{Code: "executor_not_found", Message: "executor not registered"}
+	}
+
+	routeModel := req.Model
+	opts = ensureRequestedModelMetadata(opts, routeModel)
+	publishSelectedAuthMetadata(opts.Metadata, auth.ID)
+
+	execCtx := ctx
+	if rt := m.roundTripperFor(auth); rt != nil {
+		execCtx = context.WithValue(execCtx, roundTripperContextKey{}, rt)
+		execCtx = context.WithValue(execCtx, "cliproxy.roundtripper", rt)
+	}
+
+	models, pooled := m.preparedExecutionModels(auth, routeModel)
+	if len(models) == 0 {
+		return cliproxyexecutor.Response{}, &Error{Code: "auth_unavailable", Message: "no upstream model available"}
+	}
+
+	var lastErr error
+	for _, upstreamModel := range models {
+		resultModel := m.stateModelForExecution(auth, routeModel, upstreamModel, pooled)
+		execReq := req
+		execReq.Model = upstreamModel
+		resp, errExec := executor.Execute(execCtx, auth, execReq, opts)
+		result := Result{AuthID: auth.ID, Provider: provider, Model: resultModel, Success: errExec == nil}
+		if errExec != nil {
+			if errCtx := execCtx.Err(); errCtx != nil {
+				return cliproxyexecutor.Response{}, errCtx
+			}
+			result.Error = &Error{Message: errExec.Error()}
+			if se, ok := errors.AsType[cliproxyexecutor.StatusError](errExec); ok && se != nil {
+				result.Error.HTTPStatus = se.StatusCode()
+			}
+			if ra := retryAfterFromError(errExec); ra != nil {
+				result.RetryAfter = ra
+			}
+			m.MarkResult(execCtx, result)
+			if isRequestInvalidError(errExec) {
+				return cliproxyexecutor.Response{}, errExec
+			}
+			lastErr = errExec
+			continue
+		}
+		m.MarkResult(execCtx, result)
+		return resp, nil
+	}
+	if lastErr != nil {
+		return cliproxyexecutor.Response{}, lastErr
+	}
+	return cliproxyexecutor.Response{}, &Error{Code: "auth_unavailable", Message: "no upstream model available"}
+}
+
 // It supports multiple providers for the same model and round-robins the starting provider per model.
 func (m *Manager) ExecuteCount(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	normalized := m.normalizeProviders(providers)
