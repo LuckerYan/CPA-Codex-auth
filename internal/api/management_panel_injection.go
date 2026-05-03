@@ -26,6 +26,7 @@ func injectCodexCardManagementPanel(data []byte) []byte {
 	if len(data) == 0 {
 		return data
 	}
+	data = patchQuotaManagementPanel(data)
 	if bytes.Contains(data, []byte("codex-card-management-injection")) {
 		return data
 	}
@@ -43,6 +44,47 @@ func injectCodexCardManagementPanel(data []byte) []byte {
 	out = append(out, script...)
 	out = append(out, data[idx:]...)
 	return out
+}
+
+func patchQuotaManagementPanel(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+
+	// The management panel is served from a single-file release asset, so keep
+	// quota-page compatibility fixes in the HTML response until the upstream
+	// asset ships the same behavior.
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{
+			old: "var pb=25,mb=30,",
+			new: "var pb=25,mb=1e3,",
+		},
+		{
+			old: "[c,l]=fb(380),[u,d]=(0,y.useState)(`paged`),[f,p]=(0,y.useState)(!1),m=(0,y.useMemo)",
+			new: "[c,l]=fb(380),[u,d]=(0,y.useState)(`paged`),[q,z]=(0,y.useState)(``),[f,p]=(0,y.useState)(!1),m=(0,y.useMemo)",
+		},
+		{
+			old: ",(0,y.useEffect)(()=>{S(g===`all`?Math.max(1,m.length):Math.min(c*3,pb))},[g,c,m.length,S]);",
+			new: ";let qn=Math.min(c*3,pb),zn=(()=>{let e=Number(q);return!Number.isFinite(e)||e<=0?null:Math.max(1,Math.min(Math.round(e),Math.max(m.length,pb)))})();(0,y.useEffect)(()=>{if(g===`all`){S(Math.max(1,m.length));return}S(zn??qn)},[g,m.length,zn,qn,S]);",
+		},
+		{
+			old: "let t=g===`all`?`all`:`page`,r=g===`all`?m:x;r.length!==0&&O(r,t,E)",
+			new: "let t=m;t.length!==0&&O(t,`all`,E)",
+		},
+		{
+			old: "(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`${sb.viewModeButton} ${g===`all`?sb.viewModeButtonActive:``}`,onClick:()=>{m.length>mb?p(!0):d(`all`)},children:i(`auth_files.view_mode_all`)})",
+			new: "(0,B.jsx)(`input`,{className:sb.pageSizeSelect,type:`number`,min:`1`,step:`1`,inputMode:`numeric`,value:q,placeholder:String(qn),title:i(`auth_files.page_size_label`),\"aria-label\":i(`auth_files.page_size_label`),onFocus:()=>d(`paged`),onChange:e=>{d(`paged`),z(e.target.value.replace(/[^0-9]/g,``))}}),(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`${sb.viewModeButton} ${g===`all`?sb.viewModeButtonActive:``}`,onClick:()=>d(`all`),children:i(`auth_files.view_mode_all`)})",
+		},
+	}
+
+	patched := data
+	for _, replacement := range replacements {
+		patched = bytes.Replace(patched, []byte(replacement.old), []byte(replacement.new), 1)
+	}
+	return patched
 }
 
 const codexCardManagementPanelScript = `

@@ -1,7 +1,7 @@
 # Binaries
 cli-proxy-api
 *.exe
-
+/.playwright-mcp
 # Configuration
 config.yaml
 .env
