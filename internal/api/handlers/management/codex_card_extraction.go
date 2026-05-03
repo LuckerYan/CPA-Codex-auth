@@ -12,6 +12,7 @@ import (
 	"io"
 	mrand "math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -554,12 +555,15 @@ func cloneCodexCardRecord(record *codexCardRecord) *codexCardRecord {
 }
 
 func normalizeCodexCardCodeValidated(raw string) (string, bool) {
-	trimmed := strings.TrimSpace(raw)
+	trimmed, extractedFromKeyParam := extractCodexCardCodeInput(raw)
 	if trimmed == "" {
 		return "", false
 	}
 	if strings.ContainsAny(trimmed, "\r\n\t ") {
 		return "", false
+	}
+	if shouldPreserveCodexCardCodeCase(trimmed, extractedFromKeyParam) {
+		return trimmed, true
 	}
 	return strings.ToUpper(trimmed), true
 }
@@ -570,6 +574,75 @@ func normalizeCodexCardCode(raw string) string {
 		return ""
 	}
 	return code
+}
+
+func extractCodexCardCodeInput(raw string) (string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", false
+	}
+	if parsed, err := url.Parse(trimmed); err == nil && parsed != nil {
+		if key := strings.TrimSpace(parsed.Query().Get("key")); key != "" {
+			return key, true
+		}
+	}
+	if key := extractCodexCardKeyParamFallback(trimmed); key != "" {
+		return key, true
+	}
+	return trimmed, false
+}
+
+func extractCodexCardKeyParamFallback(raw string) string {
+	lower := strings.ToLower(raw)
+	markers := []string{"?key=", "&key=", "#key=", "key="}
+	for _, marker := range markers {
+		idx := strings.Index(lower, marker)
+		if marker == "key=" && idx != 0 {
+			continue
+		}
+		if idx < 0 {
+			continue
+		}
+		start := idx + len(marker)
+		end := start
+		for end < len(raw) {
+			switch raw[end] {
+			case '&', '#', ' ', '\t', '\r', '\n':
+				value := raw[start:end]
+				return decodeCodexCardKeyParamValue(value)
+			default:
+				end++
+			}
+		}
+		return decodeCodexCardKeyParamValue(raw[start:end])
+	}
+	return ""
+}
+
+func decodeCodexCardKeyParamValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	decoded, err := url.QueryUnescape(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	return strings.TrimSpace(decoded)
+}
+
+func shouldPreserveCodexCardCodeCase(code string, extractedFromKeyParam bool) bool {
+	trimmed := strings.TrimSpace(code)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "et_") || strings.HasPrefix(trimmed, "et-") {
+		return true
+	}
+	if extractedFromKeyParam && !strings.HasPrefix(strings.ToUpper(trimmed), "CDX-") {
+		return true
+	}
+	return false
 }
 
 func addCodexAuthSelectionKeys(keys map[string]struct{}, authID, fileName, filePath string) {

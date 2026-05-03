@@ -26,6 +26,16 @@ func TestPatchQuotaManagementPanel(t *testing.T) {
 	assertNotContains(t, patched, "let t=g===`all`?`all`:`page`")
 }
 
+func TestCodexCardManagementPanelExtractsKeyFromTokenCodeLinks(t *testing.T) {
+	script := []byte(codexCardManagementPanelScript)
+
+	assertContains(t, script, "一行一个卡密或 token-code 链接")
+	assertContains(t, script, "function extractCardCodeInput")
+	assertContains(t, script, "searchParams.get(\"key\")")
+	assertContains(t, script, "function extractCardCodeInputs")
+	assertContains(t, script, "JSON.stringify({items: codes})")
+}
+
 func assertContains(t *testing.T, data []byte, want string) {
 	t.Helper()
 	if !bytes.Contains(data, []byte(want)) {

@@ -220,7 +220,7 @@ func TestExtractCodexAuthFilesReturnsZipAndRedeemsCards(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-A","CARD-B"]}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["https://email-verification-worker.1330257897.workers.dev/token-code?email=a@example.com&key=CARD-A","https://email-verification-worker.1330257897.workers.dev/token-code?email=b@example.com&key=CARD-B"]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	h.ExtractCodexAuthFiles(c)
@@ -277,6 +277,67 @@ func TestExtractCodexAuthFilesReturnsZipAndRedeemsCards(t *testing.T) {
 	}
 	if redeemed != 2 {
 		t.Fatalf("expected 2 redeemed cards, got %d: %+v", redeemed, cards)
+	}
+}
+
+func TestNormalizeCodexCardCodeValidatedExtractsURLKey(t *testing.T) {
+	raw := "https://email-verification-worker.1330257897.workers.dev/token-code?email=rzdsqn00pt@lucker-yan.asia&key=et_GHihiHG0SSKIx1q4UCpfAA"
+	got, ok := normalizeCodexCardCodeValidated(raw)
+	if !ok {
+		t.Fatalf("expected URL card code to be valid")
+	}
+	if want := "et_GHihiHG0SSKIx1q4UCpfAA"; got != want {
+		t.Fatalf("unexpected URL key extraction: got %q want %q", got, want)
+	}
+}
+
+func TestNormalizeCodexCardCodeValidatedPreservesWorkerKeyCase(t *testing.T) {
+	got, ok := normalizeCodexCardCodeValidated("et_GHihiHG0SSKIx1q4UCpfAA")
+	if !ok {
+		t.Fatalf("expected worker key to be valid")
+	}
+	if want := "et_GHihiHG0SSKIx1q4UCpfAA"; got != want {
+		t.Fatalf("unexpected worker key normalization: got %q want %q", got, want)
+	}
+}
+
+func TestNormalizeCodexCardCodeValidatedKeepsLegacyUppercaseBehavior(t *testing.T) {
+	got, ok := normalizeCodexCardCodeValidated("cdx-abcdef")
+	if !ok {
+		t.Fatalf("expected legacy card code to be valid")
+	}
+	if want := "CDX-ABCDEF"; got != want {
+		t.Fatalf("unexpected legacy normalization: got %q want %q", got, want)
+	}
+
+	got, ok = normalizeCodexCardCodeValidated("card-a")
+	if !ok {
+		t.Fatalf("expected legacy external card code to be valid")
+	}
+	if want := "CARD-A"; got != want {
+		t.Fatalf("unexpected external legacy normalization: got %q want %q", got, want)
+	}
+}
+
+func TestCodexCardStoreImportExtractsURLKey(t *testing.T) {
+	authDir := t.TempDir()
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	raw := "https://email-verification-worker.1330257897.workers.dev/token-code?email=rzdsqn00pt@lucker-yan.asia&key=et_GHihiHG0SSKIx1q4UCpfAA"
+	added, duplicates, invalid, errImport := store.importCodes([]string{raw})
+	if errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+	if len(duplicates) != 0 || len(invalid) != 0 {
+		t.Fatalf("unexpected duplicate/invalid import result: duplicates=%v invalid=%v", duplicates, invalid)
+	}
+	if len(added) != 1 {
+		t.Fatalf("expected one imported card, got %+v", added)
+	}
+	if want := "et_GHihiHG0SSKIx1q4UCpfAA"; added[0].Code != want {
+		t.Fatalf("unexpected imported code: got %q want %q", added[0].Code, want)
 	}
 }
 

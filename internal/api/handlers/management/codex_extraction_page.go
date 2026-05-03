@@ -16,7 +16,8 @@ const codexExtractionPageHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Codex 认证文件提取</title>
+  <title>CODEX EXTRACT · Codex 认证文件提取</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%23fff34d'/><stop offset='42%25' stop-color='%23b9f06e'/><stop offset='100%25' stop-color='%238ed7ef'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='url(%23g)'/><g fill='none' stroke='%2335312d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 6 8 10.5l8 11.5 8-11.5L16 6Z'/><path d='M16 9.5v9'/><path d='M11.5 11.7h9'/><path d='m12 15.5 4 2.7 4-2.7'/></g></svg>">
   <style>
     :root {
       color-scheme: dark;
@@ -29,6 +30,9 @@ const codexExtractionPageHTML = `<!doctype html>
       --text-secondary: #b9b2aa;
       --text-tertiary: #8b8680;
       --primary: #8b8680;
+      --accent-a: #fff34d;
+      --accent-b: #b9f06e;
+      --accent-c: #8ed7ef;
       --success: #10b981;
       --error: #ef9a8b;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -40,7 +44,8 @@ const codexExtractionPageHTML = `<!doctype html>
       color: var(--text-primary);
       background:
         radial-gradient(circle at 16% 0%, rgba(139,134,128,.20), transparent 34%),
-        radial-gradient(circle at 88% 14%, rgba(255,255,255,.06), transparent 28%),
+        radial-gradient(circle at 88% 14%, rgba(142,215,239,.08), transparent 32%),
+        radial-gradient(circle at 50% 110%, rgba(185,240,110,.06), transparent 50%),
         linear-gradient(180deg, #0d0c0b 0%, var(--bg-root) 42%, #11100f 100%);
       overflow-x: hidden;
     }
@@ -53,39 +58,59 @@ const codexExtractionPageHTML = `<!doctype html>
       background-size: 48px 48px;
       mask-image: radial-gradient(circle at 50% 30%, black, transparent 70%);
     }
-    .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; position: relative; z-index: 1; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 28px clamp(20px, 5vw, 72px); }
-    .brand { display: inline-flex; align-items: center; gap: 12px; color: var(--text-primary); font-size: 26px; font-weight: 900; letter-spacing: -.03em; }
-    .logo { width: 38px; height: 38px; border-radius: 9px; background: linear-gradient(135deg, #fff34d 0%, #b9f06e 42%, #8ed7ef 100%); box-shadow: 0 14px 40px rgba(141,215,239,.16); display: grid; place-items: center; color: #35312d; }
+    .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; position: relative; z-index: 1; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 26px clamp(20px, 5vw, 72px); gap: 16px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; color: var(--text-primary); font-size: 22px; font-weight: 900; letter-spacing: .04em; }
+    .brand .name { background: linear-gradient(135deg, #f5f2ee 0%, #d8d4cf 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .brand .sep { color: rgba(255,255,255,.18); margin: 0 2px; font-weight: 600; }
+    .brand .sub { color: var(--text-tertiary); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--accent-a) 0%, var(--accent-b) 42%, var(--accent-c) 100%); box-shadow: 0 14px 40px rgba(141,215,239,.18), inset 0 1px 0 rgba(255,255,255,.5); display: grid; place-items: center; color: #2a2722; }
     .logo svg { width: 24px; height: 24px; }
-    .pill { border: 1px solid var(--border); background: rgba(31,29,26,.70); border-radius: 999px; padding: 10px 14px; color: var(--text-secondary); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
-    .dot { width: 9px; height: 9px; background: var(--success); border-radius: 50%; box-shadow: 0 0 0 5px rgba(16,185,129,.12); }
-    .center { display: grid; place-items: center; padding: 24px clamp(18px, 5vw, 72px) 72px; }
-    .panel { width: min(100%, 920px); border: 1px solid var(--border); background: rgba(20,19,17,.82); border-radius: 22px; box-shadow: 0 34px 120px rgba(0,0,0,.42); overflow: hidden; position: relative; }
-    .panel::before { content: "EXTRACT"; position: absolute; right: 34px; top: 42px; color: rgba(255,255,255,.035); font-size: clamp(54px, 12vw, 132px); line-height: .8; font-weight: 950; letter-spacing: -.09em; pointer-events: none; }
-    .hero { padding: clamp(34px, 6vw, 58px) clamp(26px, 6vw, 64px) 24px; position: relative; }
-    .kicker { color: var(--text-tertiary); font-size: 14px; font-weight: 800; margin-bottom: 10px; }
-    h1 { margin: 0; max-width: 650px; color: var(--text-primary); font-size: clamp(38px, 7vw, 72px); line-height: .96; letter-spacing: -.07em; font-weight: 950; }
-    .desc { max-width: 600px; color: var(--text-secondary); margin: 18px 0 0; font-size: 16px; line-height: 1.7; }
+    .pill { border: 1px solid var(--border); background: rgba(31,29,26,.70); border-radius: 999px; padding: 9px 14px 9px 12px; color: var(--text-secondary); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; backdrop-filter: blur(6px); }
+    .dot { width: 9px; height: 9px; background: var(--success); border-radius: 50%; box-shadow: 0 0 0 5px rgba(16,185,129,.12); animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 5px rgba(16,185,129,.12); } 50% { box-shadow: 0 0 0 8px rgba(16,185,129,.04); } }
+    .center { display: grid; place-items: center; padding: 16px clamp(18px, 5vw, 72px) 56px; }
+    .panel { width: min(100%, 960px); border: 1px solid var(--border); background: rgba(20,19,17,.82); border-radius: 24px; box-shadow: 0 34px 120px rgba(0,0,0,.42); overflow: hidden; position: relative; backdrop-filter: blur(8px); }
+    .panel::before { content: "EXTRACT"; position: absolute; right: 34px; top: 38px; color: rgba(255,255,255,.035); font-size: clamp(54px, 12vw, 132px); line-height: .8; font-weight: 950; letter-spacing: -.09em; pointer-events: none; }
+    .panel::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); }
+    .hero { padding: clamp(34px, 6vw, 60px) clamp(26px, 6vw, 64px) 28px; position: relative; }
+    .kicker { color: var(--text-tertiary); font-size: 12px; font-weight: 800; margin-bottom: 14px; letter-spacing: .22em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 10px; }
+    .kicker::before { content: ""; width: 22px; height: 1px; background: linear-gradient(90deg, var(--accent-b), transparent); }
+    h1 { margin: 0; max-width: 680px; color: var(--text-primary); font-size: clamp(38px, 7vw, 72px); line-height: .98; letter-spacing: -.06em; font-weight: 950; }
+    h1 .hl { background: linear-gradient(135deg, var(--accent-a) 0%, var(--accent-b) 50%, var(--accent-c) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .desc { max-width: 620px; color: var(--text-secondary); margin: 22px 0 0; font-size: 16px; line-height: 1.75; }
+    .meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--border); background: rgba(14,13,12,.6); border-radius: 999px; color: var(--text-tertiary); font-size: 12px; font-weight: 600; }
+    .chip svg { width: 13px; height: 13px; opacity: .8; }
     .form { border-top: 1px solid var(--border); background: rgba(31,29,26,.64); padding: clamp(26px, 5vw, 42px) clamp(26px, 6vw, 64px) clamp(32px, 5vw, 48px); }
-    label { color: var(--text-secondary); display: block; margin: 0 0 10px; font-size: 14px; font-weight: 800; }
+    .label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+    label { color: var(--text-secondary); display: block; font-size: 14px; font-weight: 800; }
+    .hint { color: var(--text-tertiary); font-size: 12px; }
     .input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
-    textarea { width: 100%; min-height: 132px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 15px 17px; font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; transition: border-color .16s, box-shadow .16s, background .16s; }
-    textarea::placeholder { color: rgba(185,178,170,.56); }
+    textarea { width: 100%; min-height: 140px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 16px 18px; font: inherit; font-size: 15px; line-height: 1.6; resize: vertical; transition: border-color .16s, box-shadow .16s, background .16s; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .01em; }
+    textarea::placeholder { color: rgba(185,178,170,.5); font-family: inherit; }
     textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(139,134,128,.16); background: rgba(14,13,12,.96); }
-    button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 24px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; }
+    button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 26px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; display: inline-flex; align-items: center; gap: 8px; letter-spacing: .01em; }
+    button svg { width: 16px; height: 16px; }
     button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 32px rgba(245,242,238,.12); }
     button:disabled { opacity: .58; cursor: wait; }
-    .status { min-height: 24px; color: var(--text-tertiary); margin-top: 16px; font-size: 14px; line-height: 1.6; }
+    .status { min-height: 24px; color: var(--text-tertiary); margin-top: 18px; font-size: 14px; line-height: 1.6; display: flex; align-items: center; gap: 8px; }
+    .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
     .status.ok { color: #86efac; }
     .status.error { color: var(--error); }
-    .note { border: 1px solid var(--border); background: rgba(14,13,12,.48); color: var(--text-tertiary); border-radius: 14px; margin-top: 18px; padding: 14px 16px; font-size: 13px; line-height: 1.65; }
+    .note { border: 1px solid var(--border); background: rgba(14,13,12,.48); color: var(--text-tertiary); border-radius: 14px; margin-top: 18px; padding: 14px 16px 14px 42px; font-size: 13px; line-height: 1.7; position: relative; }
+    .note::before { content: "i"; position: absolute; left: 14px; top: 13px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,.18); display: grid; place-items: center; font-size: 11px; font-weight: 800; font-style: italic; color: var(--text-secondary); font-family: Georgia, serif; }
+    .footer { padding: 18px clamp(20px, 5vw, 72px) 28px; color: var(--text-tertiary); font-size: 12px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .footer .left { letter-spacing: .04em; }
+    .footer .right { letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
     @media (max-width: 720px) {
       .topbar { padding: 22px 18px; }
-      .pill { display: none; }
+      .brand .sub { display: none; }
+      .pill { padding: 8px 12px; font-size: 12px; }
       .input-row { grid-template-columns: 1fr; }
-      button { width: 100%; }
+      button { width: 100%; justify-content: center; }
       .panel::before { display: none; }
+      .footer { padding: 12px 18px 22px; }
     }
   </style>
 </head>
@@ -93,29 +118,43 @@ const codexExtractionPageHTML = `<!doctype html>
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 3 8l9 13 9-13-9-5Z"/><path d="M12 7v10"/><path d="M7.5 9.5h9"/><path d="m8 14 4 3 4-3"/></svg></span>
-        <span>CPAMC</span>
+        <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 13 9-13-9-5Z"/><path d="M12 7v10"/><path d="M7.5 9.5h9"/><path d="m8 14 4 3 4-3"/></svg></span>
+        <span class="name">CODEX EXTRACT</span>
       </div>
-      <div class="pill"><span class="dot"></span><span>Codex 认证文件提取</span></div>
+      <div class="pill"><span class="dot"></span><span>服务在线</span></div>
     </header>
     <main class="center">
       <section class="panel">
         <div class="hero">
           <div class="kicker">Codex Auth File</div>
-          <h1>输入卡密，提取认证文件</h1>
-          <p class="desc">系统会随机选择一个可用的 Codex 认证文件并先进行验活；验活通过后自动打包为 ZIP 下载。</p>
+          <h1>输入卡密，<span class="hl">一键提取</span></h1>
+          <p class="desc">系统自动分配可用账号、验活通过后打包为 ZIP 下载。</p>
+          <div class="meta-row">
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>验活后下发</span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>ZIP 打包</span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>批量支持</span>
+          </div>
         </div>
         <div class="form">
-          <label for="cardCode">卡密（一行一个，支持批量）</label>
-          <div class="input-row">
-            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="4" placeholder="请输入你的卡密；多行可批量提取&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&#10;CDX-YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"></textarea>
-            <button id="extractButton" type="button">提取文件</button>
+          <div class="label-row">
+            <label for="cardCode">卡密</label>
           </div>
-          <div id="status" class="status">等待输入卡密；支持一行一个卡密批量提取。</div>
-          <div class="note">一个卡密只能提取一个 Codex 认证 JSON 文件；批量提交会按卡密数量提取多个认证文件并打包为同一个 ZIP 下载。若当前随机账号状态异常，系统会自动更换其他账号继续验活。</div>
+          <div class="input-row">
+            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="4" placeholder="https://email-verification-worker.1330257897.workers.dev/token-code?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+            <button id="extractButton" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+              <span>提取</span>
+            </button>
+          </div>
+          <div id="status" class="status">就绪</div>
+          <div class="note">每张卡密对应一个 JSON 文件；可直接粘贴 token-code 链接，系统会自动读取 key 参数。批量提交将合并为同一 ZIP，账号异常会自动切换。</div>
         </div>
       </section>
     </main>
+    <footer class="footer">
+      <span class="left">© CODEX EXTRACT</span>
+      <span class="right">Codex Auth Pipeline</span>
+    </footer>
   </div>
   <script>
     var input = document.getElementById('cardCode');
@@ -147,27 +186,48 @@ const codexExtractionPageHTML = `<!doctype html>
     async function readError(resp) {
       var type = resp.headers.get('content-type') || '';
       if (type.indexOf('application/json') >= 0) {
-        try { return await resp.json(); } catch (_) {}
+        try { return await resp.json(); } catch (errJSON) {}
       }
       return { error: await resp.text() };
     }
 
+    function extractCardCodeInput(value) {
+      var trimmed = String(value || '').trim();
+      if (!trimmed) return '';
+      try {
+        var parsed = new URL(trimmed, window.location.origin);
+        var key = parsed.searchParams.get('key');
+        if (key && key.trim()) return key.trim();
+      } catch (errParse) {}
+      var match = trimmed.match(/(?:^|[?&#])key=([^&#\s]+)/i);
+      if (match && match[1]) {
+        try {
+          return decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
+        } catch (errDecode) {
+          return match[1].trim();
+        }
+      }
+      return trimmed;
+    }
+
     function getCardCodes() {
-      return input.value
-        .split(/\r?\n/)
-        .map(function (item) { return item.trim(); })
+      return String(input.value || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map(extractCardCodeInput)
         .filter(Boolean);
     }
 
     async function extract() {
       var codes = getCardCodes();
       if (codes.length === 0) {
-        setStatus('请先输入卡密。', 'error');
+        setStatus('请先输入卡密', 'error');
         input.focus();
         return;
       }
       button.disabled = true;
-      setStatus(codes.length > 1 ? '正在批量验活 ' + codes.length + ' 个卡密并准备下载，请稍候...' : '正在验活并准备下载，请稍候...', '');
+      setStatus(codes.length > 1 ? '验活中（' + codes.length + '）…' : '验活中…', '');
       try {
         var resp = await fetch('/v0/codex-extract', {
           method: 'POST',
@@ -181,7 +241,7 @@ const codexExtractionPageHTML = `<!doctype html>
         var blob = await resp.blob();
         var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || (codes.length > 1 ? 'codex-auth-files.zip' : 'codex-auth-file.zip');
         downloadBlob(blob, filename);
-        setStatus(codes.length > 1 ? '批量提取成功，ZIP 已开始下载。' : '提取成功，ZIP 已开始下载。', 'ok');
+        setStatus('提取成功 · ZIP 已开始下载', 'ok');
         input.value = '';
       } catch (err) {
         setStatus(err.message || String(err), 'error');

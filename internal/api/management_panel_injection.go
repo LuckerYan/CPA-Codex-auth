@@ -368,9 +368,9 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     </section>
     <section class="codex-card-admin-card">
       <h2>外部导入卡密</h2>
-      <p class="codex-card-admin-muted">一行一个卡密；重复卡密不会覆盖已有兑换状态。</p>
+      <p class="codex-card-admin-muted">一行一个卡密或 token-code 链接；导入时会自动提取链接中的 key 参数，重复卡密不会覆盖已有兑换状态。</p>
       <label class="codex-card-admin-label" for="codexCardImportCodes">待导入卡密</label>
-      <textarea class="codex-card-admin-textarea" id="codexCardImportCodes" placeholder="EXTERNAL-CARD-001&#10;EXTERNAL-CARD-002"></textarea>
+      <textarea class="codex-card-admin-textarea" id="codexCardImportCodes" placeholder="https://email-verification-worker.1330257897.workers.dev/token-code?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
       <div class="codex-card-admin-actions">
         <button class="codex-card-admin-button" id="codexCardImportButton">导入卡密</button>
         <a class="codex-card-admin-button secondary" href="/codex-extract.html" target="_blank" rel="noopener">打开用户提取页</a>
@@ -410,6 +410,34 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     if (!el) return;
     el.textContent = message || "";
     el.className = "codex-card-admin-status" + (type ? " " + type : "");
+  }
+
+  function extractCardCodeInput(value) {
+    var trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+    try {
+      var parsed = new URL(trimmed, window.location.origin);
+      var key = parsed.searchParams.get("key");
+      if (key && key.trim()) return key.trim();
+    } catch (errParse) {}
+    var match = trimmed.match(/(?:^|[?&#])key=([^&#\s]+)/i);
+    if (match && match[1]) {
+      try {
+        return decodeURIComponent(match[1].replace(/\+/g, " ")).trim();
+      } catch (errDecode) {
+        return match[1].trim();
+      }
+    }
+    return trimmed;
+  }
+
+  function extractCardCodeInputs(text) {
+    return String(text || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map(extractCardCodeInput)
+      .filter(Boolean);
   }
 
   function renderStats(summary) {
@@ -582,10 +610,16 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     if (importButton) {
       importButton.addEventListener("click", async function () {
         importButton.disabled = true;
-        updateStatus("codexCardImportStatus", "正在导入卡密...", "");
+        updateStatus("codexCardImportStatus", "正在识别卡密...", "");
         try {
-          var codes = document.getElementById("codexCardImportCodes").value || "";
-          var data = await apiFetch("/codex-cards/import", {method: "POST", body: JSON.stringify({codes: codes})});
+          var rawCodes = document.getElementById("codexCardImportCodes").value || "";
+          var codes = extractCardCodeInputs(rawCodes);
+          if (codes.length === 0) {
+            updateStatus("codexCardImportStatus", "请先输入卡密或 token-code 链接。", "error");
+            return;
+          }
+          updateStatus("codexCardImportStatus", "已识别 " + codes.length + " 个卡密，正在导入...", "");
+          var data = await apiFetch("/codex-cards/import", {method: "POST", body: JSON.stringify({items: codes})});
           updateStatus("codexCardImportStatus", "导入 " + data.imported + " 个，重复 " + ((data.duplicates || []).length) + " 个，非法 " + ((data.invalid || []).length) + " 个。", "ok");
           await loadCards();
         } catch (err) {
