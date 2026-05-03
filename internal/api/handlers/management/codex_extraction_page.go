@@ -69,10 +69,10 @@ const codexExtractionPageHTML = `<!doctype html>
     .desc { max-width: 600px; color: var(--text-secondary); margin: 18px 0 0; font-size: 16px; line-height: 1.7; }
     .form { border-top: 1px solid var(--border); background: rgba(31,29,26,.64); padding: clamp(26px, 5vw, 42px) clamp(26px, 6vw, 64px) clamp(32px, 5vw, 48px); }
     label { color: var(--text-secondary); display: block; margin: 0 0 10px; font-size: 14px; font-weight: 800; }
-    .input-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
-    input { width: 100%; height: 54px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 0 17px; font: inherit; font-size: 16px; transition: border-color .16s, box-shadow .16s, background .16s; }
-    input::placeholder { color: rgba(185,178,170,.56); }
-    input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(139,134,128,.16); background: rgba(14,13,12,.96); }
+    .input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+    textarea { width: 100%; min-height: 132px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 15px 17px; font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; transition: border-color .16s, box-shadow .16s, background .16s; }
+    textarea::placeholder { color: rgba(185,178,170,.56); }
+    textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(139,134,128,.16); background: rgba(14,13,12,.96); }
     button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 24px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; }
     button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 32px rgba(245,242,238,.12); }
     button:disabled { opacity: .58; cursor: wait; }
@@ -106,13 +106,13 @@ const codexExtractionPageHTML = `<!doctype html>
           <p class="desc">系统会随机选择一个可用的 Codex 认证文件并先进行验活；验活通过后自动打包为 ZIP 下载。</p>
         </div>
         <div class="form">
-          <label for="cardCode">卡密</label>
+          <label for="cardCode">卡密（一行一个，支持批量）</label>
           <div class="input-row">
-            <input id="cardCode" autocomplete="one-time-code" placeholder="请输入你的卡密">
+            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="4" placeholder="请输入你的卡密；多行可批量提取&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX&#10;CDX-YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"></textarea>
             <button id="extractButton" type="button">提取文件</button>
           </div>
-          <div id="status" class="status">等待输入卡密。</div>
-          <div class="note">一个卡密只能提取一个 Codex 认证 JSON 文件；若当前随机账号状态异常，系统会自动更换其他账号继续验活。</div>
+          <div id="status" class="status">等待输入卡密；支持一行一个卡密批量提取。</div>
+          <div class="note">一个卡密只能提取一个 Codex 认证 JSON 文件；批量提交会按卡密数量提取多个认证文件并打包为同一个 ZIP 下载。若当前随机账号状态异常，系统会自动更换其他账号继续验活。</div>
         </div>
       </section>
     </main>
@@ -152,29 +152,36 @@ const codexExtractionPageHTML = `<!doctype html>
       return { error: await resp.text() };
     }
 
+    function getCardCodes() {
+      return input.value
+        .split(/\r?\n/)
+        .map(function (item) { return item.trim(); })
+        .filter(Boolean);
+    }
+
     async function extract() {
-      var code = input.value.trim();
-      if (!code) {
+      var codes = getCardCodes();
+      if (codes.length === 0) {
         setStatus('请先输入卡密。', 'error');
         input.focus();
         return;
       }
       button.disabled = true;
-      setStatus('正在验活并准备下载，请稍候...', '');
+      setStatus(codes.length > 1 ? '正在批量验活 ' + codes.length + ' 个卡密并准备下载，请稍候...' : '正在验活并准备下载，请稍候...', '');
       try {
         var resp = await fetch('/v0/codex-extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ codes: code })
+          body: JSON.stringify({ items: codes })
         });
         if (!resp.ok) {
           var err = await readError(resp);
           throw new Error(err.error || '提取失败');
         }
         var blob = await resp.blob();
-        var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || 'codex-auth-file.zip';
+        var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || (codes.length > 1 ? 'codex-auth-files.zip' : 'codex-auth-file.zip');
         downloadBlob(blob, filename);
-        setStatus('提取成功，ZIP 已开始下载。', 'ok');
+        setStatus(codes.length > 1 ? '批量提取成功，ZIP 已开始下载。' : '提取成功，ZIP 已开始下载。', 'ok');
         input.value = '';
       } catch (err) {
         setStatus(err.message || String(err), 'error');
@@ -185,7 +192,7 @@ const codexExtractionPageHTML = `<!doctype html>
 
     button.addEventListener('click', extract);
     input.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') extract();
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') extract();
     });
   </script>
 </body>

@@ -220,7 +220,7 @@ func TestExtractCodexAuthFilesReturnsZipAndRedeemsCards(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"codes":"CARD-A\nCARD-B"}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-A","CARD-B"]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	h.ExtractCodexAuthFiles(c)
