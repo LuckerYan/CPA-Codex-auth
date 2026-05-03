@@ -405,10 +405,7 @@ func (s *codexCardStore) deleteCodes(codes []string) ([]string, []string, error)
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(record.Status), codexCardStatusRedeemed) {
-			if s.redeemedAuthKeySet == nil {
-				s.redeemedAuthKeySet = make(map[string]struct{})
-			}
-			addCodexAuthSelectionKeys(s.redeemedAuthKeySet, record.RedeemedAuthID, record.RedeemedFile, "")
+			removeCodexAuthSelectionKeys(s.redeemedAuthKeySet, record.RedeemedAuthID, record.RedeemedFile, "")
 		}
 		delete(s.cards, code)
 		deleted = append(deleted, code)
@@ -581,6 +578,33 @@ func addCodexAuthSelectionKeys(keys map[string]struct{}, authID, fileName, fileP
 	}
 	for _, key := range codexAuthSelectionKeys(authID, fileName, filePath) {
 		keys[key] = struct{}{}
+	}
+}
+
+func removeCodexAuthSelectionKeys(keys map[string]struct{}, authID, fileName, filePath string) {
+	if keys == nil {
+		return
+	}
+	targets := codexAuthSelectionKeys(authID, fileName, filePath)
+	if len(targets) == 0 {
+		return
+	}
+	targetSet := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		if strings.TrimSpace(target) != "" {
+			targetSet[target] = struct{}{}
+		}
+	}
+	for key := range keys {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if _, ok := targetSet[normalizedKey]; ok {
+			delete(keys, key)
+			continue
+		}
+		base := strings.ToLower(strings.TrimSpace(filepath.Base(filepath.Clean(normalizedKey))))
+		if _, ok := targetSet[base]; ok {
+			delete(keys, key)
+		}
 	}
 }
 

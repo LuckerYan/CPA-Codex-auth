@@ -352,7 +352,7 @@ func TestCodexCardStoreRedeemRejectsAlreadyRedeemedAuth(t *testing.T) {
 	}
 }
 
-func TestCodexCardStoreDeleteKeepsRedeemedAuthReserved(t *testing.T) {
+func TestCodexCardStoreDeleteReleasesRedeemedAuthReservation(t *testing.T) {
 	authDir := t.TempDir()
 	store, err := getCodexCardStore(authDir)
 	if err != nil {
@@ -385,11 +385,8 @@ func TestCodexCardStoreDeleteKeepsRedeemedAuthReserved(t *testing.T) {
 		t.Fatalf("expected only CARD-B to remain, got %+v", cards)
 	}
 	errRedeemAgain := store.redeem([]string{"card-b"}, []codexSelectedAuth{file})
-	if errRedeemAgain == nil {
-		t.Fatalf("expected deleted redeemed auth to remain reserved")
-	}
-	if !strings.Contains(errRedeemAgain.Error(), "already redeemed") {
-		t.Fatalf("expected already redeemed error, got %v", errRedeemAgain)
+	if errRedeemAgain != nil {
+		t.Fatalf("expected deleting redeemed card to release auth reservation, got %v", errRedeemAgain)
 	}
 }
 
