@@ -357,7 +357,7 @@ func TestUploadAuthFile_BatchMultipart_CountsExistingFileNamesAsDuplicates(t *te
 	}
 }
 
-func TestBuildCodexAuthStatsCountsExtractionIndependentlyFromBanned(t *testing.T) {
+func TestBuildCodexAuthStatsCountsUnextractedOnlyForNormalFiles(t *testing.T) {
 	stats := buildCodexAuthStats([]gin.H{
 		{
 			"type":            "codex",
@@ -385,7 +385,7 @@ func TestBuildCodexAuthStatsCountsExtractionIndependentlyFromBanned(t *testing.T
 	assertCodexStat(t, stats, "normal", 2)
 	assertCodexStat(t, stats, "banned", 2)
 	assertCodexStat(t, stats, "extracted", 2)
-	assertCodexStat(t, stats, "unextracted", 2)
+	assertCodexStat(t, stats, "unextracted", 1)
 }
 
 func assertCodexStat(t *testing.T, stats gin.H, key string, want int) {

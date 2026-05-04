@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -77,11 +78,81 @@ func (e *fakeCodexValidationExecutor) CountTokens(context.Context, *coreauth.Aut
 	return cliproxyexecutor.Response{}, nil
 }
 
-func (e *fakeCodexValidationExecutor) HttpRequest(context.Context, *coreauth.Auth, *http.Request) (*http.Response, error) {
-	return nil, fmt.Errorf("not implemented")
+func (e *fakeCodexValidationExecutor) HttpRequest(ctx context.Context, auth *coreauth.Auth, req *http.Request) (*http.Response, error) {
+	if auth == nil {
+		return nil, &coreauth.Error{Code: "auth_not_found", Message: "missing auth"}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	current := atomic.AddInt32(&e.active, 1)
+	for {
+		maxSeen := atomic.LoadInt32(&e.maxActive)
+		if current <= maxSeen || atomic.CompareAndSwapInt32(&e.maxActive, maxSeen, current) {
+			break
+		}
+	}
+	defer atomic.AddInt32(&e.active, -1)
+
+	if e.delay > 0 {
+		timer := time.NewTimer(e.delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	if req == nil || req.URL == nil {
+		return nil, fmt.Errorf("missing request url")
+	}
+	if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || req.URL.Path != "/backend-api/wham/usage" {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Status:     http.StatusText(http.StatusNotFound),
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"unexpected quota request"}}`)),
+		}, nil
+	}
+	expectedAccountID := ""
+	if auth.Metadata != nil {
+		if v, ok := auth.Metadata["account_id"].(string); ok {
+			expectedAccountID = strings.TrimSpace(v)
+		}
+	}
+	if expectedAccountID == "" {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Status:     http.StatusText(http.StatusBadRequest),
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"missing expected account id"}}`)),
+		}, nil
+	}
+	if got := strings.TrimSpace(req.Header.Get("Chatgpt-Account-Id")); got != expectedAccountID {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Status:     http.StatusText(http.StatusBadRequest),
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"missing or mismatched Chatgpt-Account-Id"}}`)),
+		}, nil
+	}
+	if e.invalid[auth.ID] {
+		return &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     http.StatusText(http.StatusUnauthorized),
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"401 Your authentication token has been invalidated. Please try signing in again."}}`)),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     http.StatusText(http.StatusOK),
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"plan_type":"free","rate_limit":{},"code_review_rate_limit":{},"additional_rate_limits":[]}`)),
+	}, nil
 }
 
-func TestValidateCodexAuthCandidatesSkipsUnauthorized(t *testing.T) {
+func TestValidateCodexAuthCandidatesBansInvalidatedQuotaAuth(t *testing.T) {
 	manager := coreauth.NewManager(nil, nil, nil)
 	executor := &fakeCodexValidationExecutor{invalid: map[string]bool{"bad.json": true}}
 	manager.RegisterExecutor(executor)
@@ -109,6 +180,75 @@ func TestValidateCodexAuthCandidatesSkipsUnauthorized(t *testing.T) {
 			t.Fatalf("unauthorized candidate was selected: %+v", selected)
 		}
 	}
+	badAuth, ok := manager.GetByID("bad.json")
+	if !ok {
+		t.Fatalf("expected bad auth to remain registered")
+	}
+	if !badAuth.IsBlocked() || badAuth.Status != coreauth.StatusBanned {
+		t.Fatalf("expected bad auth to be banned after invalidation, got status=%s blocked=%v message=%q", badAuth.Status, badAuth.IsBlocked(), badAuth.StatusMessage)
+	}
+	wantInvalidationMessage := "401 Your authentication token has been invalidated. Please try signing in again."
+	if badAuth.StatusMessage != wantInvalidationMessage {
+		t.Fatalf("expected banned status message %q, got %q", wantInvalidationMessage, badAuth.StatusMessage)
+	}
+}
+
+func TestCollectCodexAuthCandidatesSkipsBannedQuotaAuth(t *testing.T) {
+	manager := coreauth.NewManager(nil, nil, nil)
+	executor := &fakeCodexValidationExecutor{invalid: map[string]bool{"bad.json": true}}
+	manager.RegisterExecutor(executor)
+
+	authDir := t.TempDir()
+	badPath := writeTestCodexAuthFile(t, authDir, "bad.json", "bad@example.com")
+	goodAPath := writeTestCodexAuthFile(t, authDir, "good-a.json", "good-a@example.com")
+	goodBPath := writeTestCodexAuthFile(t, authDir, "good-b.json", "good-b@example.com")
+
+	registerTestCodexAuth(t, manager, "bad.json", badPath)
+	registerTestCodexAuth(t, manager, "good-a.json", goodAPath)
+	registerTestCodexAuth(t, manager, "good-b.json", goodBPath)
+
+	h := &Handler{cfg: &config.Config{AuthDir: authDir}, authManager: manager}
+	selected, err := h.validateCodexAuthCandidates(context.Background(), []codexAuthCandidate{
+		{ID: "bad.json", FileName: "bad.json"},
+		{ID: "good-a.json", FileName: "good-a.json"},
+		{ID: "good-b.json", FileName: "good-b.json"},
+	}, 2)
+	if err != nil {
+		t.Fatalf("validate candidates failed: %v", err)
+	}
+	if len(selected) != 2 {
+		t.Fatalf("expected 2 selected auths, got %d", len(selected))
+	}
+	for _, candidate := range selected {
+		if candidate.ID == "bad.json" {
+			t.Fatalf("banned candidate was selected: %+v", selected)
+		}
+	}
+
+	bannedAuth, ok := manager.GetByID("bad.json")
+	if !ok {
+		t.Fatalf("expected bad auth to remain registered")
+	}
+	if !bannedAuth.IsBlocked() || bannedAuth.Status != coreauth.StatusBanned {
+		t.Fatalf("expected bad auth to be banned after invalidation, got status=%s blocked=%v message=%q", bannedAuth.Status, bannedAuth.IsBlocked(), bannedAuth.StatusMessage)
+	}
+	wantInvalidationMessage := "401 Your authentication token has been invalidated. Please try signing in again."
+	if bannedAuth.StatusMessage != wantInvalidationMessage {
+		t.Fatalf("expected banned status message %q, got %q", wantInvalidationMessage, bannedAuth.StatusMessage)
+	}
+
+	candidates, err := h.collectCodexAuthCandidates(context.Background(), map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("collect candidates failed after ban: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates after skipping banned auth, got %d: %+v", len(candidates), candidates)
+	}
+	for _, candidate := range candidates {
+		if candidate.ID == "bad.json" {
+			t.Fatalf("banned candidate should not be collected again: %+v", candidates)
+		}
+	}
 }
 
 func TestValidateCodexAuthCandidatesDoesNotRequireRegistryModelRegistration(t *testing.T) {
@@ -124,6 +264,11 @@ func TestValidateCodexAuthCandidatesDoesNotRequireRegistryModelRegistration(t *t
 		ID:       authID,
 		Provider: "codex",
 		Status:   coreauth.StatusActive,
+		Metadata: map[string]any{
+			"type":         "codex",
+			"account_id":   "account-" + authID,
+			"access_token": "access-" + authID,
+		},
 	}); err != nil {
 		t.Fatalf("register auth: %v", err)
 	}
@@ -586,13 +731,14 @@ func registerTestCodexAuthRecord(t *testing.T, manager *coreauth.Manager, id, pa
 		attrs["path"] = path
 		fileName = filepath.Base(path)
 	}
+	accountID := "account-" + fileName
 	_, err := manager.Register(context.Background(), &coreauth.Auth{
 		ID:         id,
 		Provider:   "codex",
 		FileName:   fileName,
 		Status:     coreauth.StatusActive,
 		Attributes: attrs,
-		Metadata:   map[string]any{"type": "codex"},
+		Metadata:   map[string]any{"type": "codex", "account_id": accountID, "access_token": "access-" + fileName},
 	})
 	if err != nil {
 		t.Fatalf("register auth %s: %v", id, err)

@@ -931,13 +931,14 @@ const authFileCodexStatsScript = `
     (Array.isArray(files) ? files : []).forEach(function (file) {
       if (!isCodexFile(file)) return;
       stats.total += 1;
-      if (isBannedFile(file)) {
+      var banned = isBannedFile(file);
+      if (banned) {
         stats.banned += 1;
       } else {
         stats.normal += 1;
       }
       if (isExtractedFile(file)) stats.extracted += 1;
-      else stats.unextracted += 1;
+      else if (!banned) stats.unextracted += 1;
     });
     return stats;
   }
@@ -949,8 +950,8 @@ const authFileCodexStatsScript = `
       total: numberValue(raw.total),
       normal: numberValue(raw.normal),
       banned: numberValue(raw.banned),
-      unextracted: numberValue(raw.unextracted || raw.unredeemed),
-      extracted: numberValue(raw.extracted || raw.redeemed)
+      unextracted: raw.unextracted != null ? numberValue(raw.unextracted) : numberValue(raw.unredeemed),
+      extracted: raw.extracted != null ? numberValue(raw.extracted) : numberValue(raw.redeemed)
     };
   }
 
@@ -967,7 +968,7 @@ const authFileCodexStatsScript = `
       ["账号总数", stats.total, "total", ""],
       ["正常", stats.normal, "normal", ""],
       ["封禁", stats.banned, "banned", ""],
-      ["未提取", stats.unextracted, "unextracted", "未提取=尚未分配给用户"],
+      ["未提取", stats.unextracted, "unextracted", "未提取=状态正常且尚未分配给用户"],
       ["已提取", stats.extracted, "extracted", "已提取=已分配给用户"]
     ];
     panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计' + (loading ? ' · 更新中' : '') + '</div>' + items.map(function (item) {

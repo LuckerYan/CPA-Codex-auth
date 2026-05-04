@@ -22,10 +22,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	codexjwt "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
-	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -35,8 +34,9 @@ const (
 	codexCardStatusRedeemed       = "redeemed"
 	codexCardStatusDisabled       = "disabled"
 	codexValidationModel          = "gpt-5.4-mini"
-	codexValidationInput          = `{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"ping"}]}]}`
 	codexValidationConcurrencyCap = 16
+	codexQuotaUsageURL            = "https://chatgpt.com/backend-api/wham/usage"
+	codexQuotaUserAgent           = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal"
 )
 
 var codexCardStores sync.Map
@@ -1357,17 +1357,7 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 		if candidate.ID == "" {
 			return false
 		}
-		req := cliproxyexecutor.Request{
-			Model:   codexValidationModel,
-			Payload: []byte(codexValidationInput),
-			Format:  sdktranslator.FormatOpenAIResponse,
-		}
-		opts := cliproxyexecutor.Options{
-			Alt:          "responses/compact",
-			SourceFormat: sdktranslator.FormatOpenAIResponse,
-			Metadata:     map[string]any{cliproxyexecutor.PinnedAuthMetadataKey: candidate.ID},
-		}
-		_, errExec := h.authManager.ExecuteWithAuthID(ctx, candidate.ID, req, opts)
+		errExec := h.validateCodexQuotaCandidate(ctx, candidate.ID)
 		if errExec == nil {
 			mu.Lock()
 			checked++
@@ -1375,13 +1365,13 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 			return true
 		}
 		status := validationErrorStatus(errExec)
-		if status == http.StatusUnauthorized {
-			log.Debugf("codex auth %s failed validation with 401, trying another candidate", candidate.ID)
-			if coreauth.IsAuthenticationTokenInvalidatedError(errExec) {
-				h.authManager.MarkBanned(context.Background(), candidate.ID, coreauth.TokenInvalidatedMessage(errExec))
-			}
+		if coreauth.IsAuthenticationTokenInvalidatedError(errExec) {
+			log.Debugf("codex auth %s failed quota validation with invalidated token, banning auth and trying another candidate", candidate.ID)
+			h.authManager.MarkBanned(context.Background(), candidate.ID, codexAuthInvalidationMessage(errExec))
+		} else if status == http.StatusUnauthorized {
+			log.Debugf("codex auth %s failed quota validation with 401, trying another candidate", candidate.ID)
 		} else {
-			log.Debugf("codex auth %s failed validation: %v", candidate.ID, errExec)
+			log.Debugf("codex auth %s failed quota validation: %v", candidate.ID, errExec)
 		}
 		mu.Lock()
 		checked++
@@ -1465,6 +1455,163 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 	return selected, nil
 }
 
+func (h *Handler) validateCodexQuotaCandidate(ctx context.Context, authID string) error {
+	if h == nil || h.authManager == nil {
+		return fmt.Errorf("core auth manager unavailable")
+	}
+	authID = strings.TrimSpace(authID)
+	if authID == "" {
+		return fmt.Errorf("auth id is empty")
+	}
+	auth, okAuth := h.authManager.GetByID(authID)
+	if !okAuth || auth == nil {
+		return &coreauth.Error{Code: "auth_not_found", Message: "auth not found", HTTPStatus: http.StatusNotFound}
+	}
+	if !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
+		return &coreauth.Error{Code: "provider_not_found", Message: "auth provider is not codex", HTTPStatus: http.StatusBadRequest}
+	}
+	accountID := resolveCodexQuotaAccountID(auth)
+	if accountID == "" {
+		return &coreauth.Error{Code: "invalid_request", Message: "Codex credential missing ChatGPT account ID", HTTPStatus: http.StatusBadRequest}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, codexQuotaUsageURL, nil)
+	if errReq != nil {
+		return fmt.Errorf("build codex quota request: %w", errReq)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", codexQuotaUserAgent)
+	req.Header.Set("Chatgpt-Account-Id", accountID)
+
+	resp, errExec := h.authManager.HttpRequest(ctx, auth, req)
+	if errExec != nil {
+		return errExec
+	}
+	if resp == nil {
+		return fmt.Errorf("codex quota response is empty")
+	}
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.WithError(errClose).Debug("failed to close codex quota response body")
+		}
+	}()
+
+	body, errRead := io.ReadAll(resp.Body)
+	if errRead != nil {
+		return fmt.Errorf("read codex quota response: %w", errRead)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message := codexQuotaResponseMessage(body)
+		if message == "" {
+			message = http.StatusText(resp.StatusCode)
+		}
+		return &coreauth.Error{Code: "auth_unavailable", Message: message, HTTPStatus: resp.StatusCode}
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return fmt.Errorf("parse codex quota response: %w", err)
+	}
+	if parsed == nil {
+		return fmt.Errorf("codex quota response is empty")
+	}
+	return nil
+}
+
+func resolveCodexQuotaAccountID(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if v := strings.TrimSpace(codexAuthMetadataValue(auth.Metadata, "account_id")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(authAttribute(auth, "account_id")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(codexAuthMetadataValue(auth.Metadata, "chatgpt_account_id")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(authAttribute(auth, "chatgpt_account_id")); v != "" {
+		return v
+	}
+	for _, token := range []string{
+		strings.TrimSpace(codexAuthMetadataValue(auth.Metadata, "id_token")),
+		strings.TrimSpace(authAttribute(auth, "id_token")),
+	} {
+		if token == "" {
+			continue
+		}
+		claims, err := codexjwt.ParseJWTToken(token)
+		if err != nil || claims == nil {
+			continue
+		}
+		if v := strings.TrimSpace(claims.CodexAuthInfo.ChatgptAccountID); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func codexQuotaResponseMessage(body []byte) string {
+	message := strings.TrimSpace(string(body))
+	if message == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return message
+	}
+	if extracted := codexErrorMessageFromPayload(payload); extracted != "" {
+		return extracted
+	}
+	return message
+}
+
+func codexErrorMessageFromPayload(payload map[string]any) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	if msg := extractStringField(payload, "message"); msg != "" {
+		return msg
+	}
+	if value, ok := payload["error"]; ok {
+		switch typed := value.(type) {
+		case map[string]any:
+			if msg := extractStringField(typed, "message"); msg != "" {
+				return msg
+			}
+			if msg := extractStringField(typed, "error"); msg != "" {
+				return msg
+			}
+		case string:
+			if msg := strings.TrimSpace(typed); msg != "" {
+				return msg
+			}
+		}
+	}
+	if msg := extractStringField(payload, "error_description"); msg != "" {
+		return msg
+	}
+	return ""
+}
+
+func extractStringField(payload map[string]any, key string) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return ""
+	}
+	msg, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(msg)
+}
+
 func validationErrorStatus(err error) int {
 	if err == nil {
 		return 0
@@ -1478,6 +1625,19 @@ func validationErrorStatus(err error) int {
 		return authErr.StatusCode()
 	}
 	return 0
+}
+
+func codexAuthInvalidationMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	var authErr *coreauth.Error
+	if errors.As(err, &authErr) && authErr != nil {
+		if message := strings.TrimSpace(authErr.Message); message != "" {
+			return message
+		}
+	}
+	return coreauth.TokenInvalidatedMessage(err)
 }
 
 func (h *Handler) loadCodexAuthFiles(candidates []codexAuthCandidate) ([]codexSelectedAuth, error) {
