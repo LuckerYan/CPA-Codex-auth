@@ -81,6 +81,7 @@ func TestCodexCardManagementPanelIncludesAuthFilesFilterStyles(t *testing.T) {
 	assertContains(t, script, "ToggleSwitch-module__root")
 	assertContains(t, script, "grid-template-columns:minmax(220px,380px)")
 	assertContains(t, script, "left:0;right:auto")
+	assertContains(t, script, "width:100%;min-width:0")
 	assertContains(t, script, "::-webkit-details-marker{display:none!important}")
 }
 
