@@ -513,10 +513,12 @@ func (h *Handler) annotateCodexAuthExtractionStatus(entry gin.H, auth *coreauth.
 	if path != "" {
 		fileName = filepath.Base(filepath.Clean(path))
 	}
+	reservationKeys := codexAuthReservationKeys(auth.ID, fileName, path, auth.Metadata)
 	redeemed := codexAuthAlreadyRedeemed(redeemedAuths, codexAuthCandidate{
-		ID:       auth.ID,
-		FileName: fileName,
-		FilePath: path,
+		ID:              auth.ID,
+		FileName:        fileName,
+		FilePath:        path,
+		ReservationKeys: reservationKeys,
 	})
 	entry["codex_redeemed"] = redeemed
 	entry["codex_extracted"] = redeemed

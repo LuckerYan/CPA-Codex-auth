@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -386,6 +387,117 @@ func TestCollectCodexAuthCandidatesSkipsRedeemedAuthFiles(t *testing.T) {
 	}
 }
 
+func TestCodexAuthClonedContentIsBlockedAndCountedAsRedeemed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	sharedBody := []byte(`{"id_token":"id-shared","access_token":"access-shared","refresh_token":"refresh-shared","account_id":"account-shared","last_refresh":"2026-01-01T00:00:00Z","email":"shared@example.com","type":"codex","expired":"2026-12-31T00:00:00Z"}`)
+	uniqueBody := []byte(`{"id_token":"id-unique","access_token":"access-unique","refresh_token":"refresh-unique","account_id":"account-unique","last_refresh":"2026-01-01T00:00:00Z","email":"unique@example.com","type":"codex","expired":"2026-12-31T00:00:00Z"}`)
+
+	pathA := writeTestCodexAuthContent(t, authDir, "codex-a.json", sharedBody)
+	pathB := writeTestCodexAuthContent(t, authDir, "codex-b.json", sharedBody)
+	pathC := writeTestCodexAuthContent(t, authDir, "codex-c.json", uniqueBody)
+
+	metaShared := mustCodexAuthMetadata(t, sharedBody)
+	metaUnique := mustCodexAuthMetadata(t, uniqueBody)
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	registerTestCodexAuthWithMetadata(t, manager, "codex-a.json", pathA, metaShared)
+	registerTestCodexAuthWithMetadata(t, manager, "codex-b.json", pathB, metaShared)
+	registerTestCodexAuthWithMetadata(t, manager, "codex-c.json", pathC, metaUnique)
+
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes([]string{"card-a", "card-b"}); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+
+	if errRedeem := store.redeem([]string{"card-a"}, []codexSelectedAuth{{
+		AuthID:          "codex-a.json",
+		FileName:        filepath.Base(pathA),
+		FilePath:        pathA,
+		Data:            sharedBody,
+		ReservationKeys: codexAuthReservationKeys("codex-a.json", filepath.Base(pathA), pathA, metaShared),
+	}}); errRedeem != nil {
+		t.Fatalf("first redeem failed: %v", errRedeem)
+	}
+
+	errRedeemClone := store.redeem([]string{"card-b"}, []codexSelectedAuth{{
+		AuthID:          "codex-b.json",
+		FileName:        filepath.Base(pathB),
+		FilePath:        pathB,
+		Data:            sharedBody,
+		ReservationKeys: codexAuthReservationKeys("codex-b.json", filepath.Base(pathB), pathB, metaShared),
+	}})
+	if errRedeemClone == nil {
+		t.Fatalf("expected cloned auth redeem to fail")
+	}
+	if !strings.Contains(strings.ToLower(errRedeemClone.Error()), "already redeemed") {
+		t.Fatalf("expected already redeemed error, got %v", errRedeemClone)
+	}
+
+	redeemedKeys, errKeys := store.redeemedAuthKeys()
+	if errKeys != nil {
+		t.Fatalf("redeemed keys: %v", errKeys)
+	}
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	candidates, errCandidates := h.collectCodexAuthCandidates(context.Background(), redeemedKeys)
+	if errCandidates != nil {
+		t.Fatalf("collect candidates: %v", errCandidates)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("expected one available candidate after clone filtering, got %+v", candidates)
+	}
+	if candidates[0].ID != "codex-c.json" {
+		t.Fatalf("expected unique auth to remain available, got %+v", candidates)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v0/management/auth-files?is_webui=1", nil)
+
+	h.ListAuthFiles(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from ListAuthFiles, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Files          []map[string]any `json:"files"`
+		CodexAuthStats map[string]int   `json:"codex_auth_stats"`
+	}
+	if errJSON := json.Unmarshal(w.Body.Bytes(), &resp); errJSON != nil {
+		t.Fatalf("unmarshal auth file list: %v", errJSON)
+	}
+	if got := resp.CodexAuthStats["total"]; got != 3 {
+		t.Fatalf("expected total 3, got %d", got)
+	}
+	if got := resp.CodexAuthStats["extracted"]; got != 2 {
+		t.Fatalf("expected extracted 2, got %d", got)
+	}
+	if got := resp.CodexAuthStats["unextracted"]; got != 1 {
+		t.Fatalf("expected unextracted 1, got %d", got)
+	}
+
+	filesByName := make(map[string]map[string]any, len(resp.Files))
+	for _, file := range resp.Files {
+		name, _ := file["name"].(string)
+		if name != "" {
+			filesByName[name] = file
+		}
+	}
+	if fileB, ok := filesByName[filepath.Base(pathB)]; !ok {
+		t.Fatalf("expected cloned auth file entry to exist in auth list: %+v", filesByName)
+	} else if redeemed, _ := fileB["codex_redeemed"].(bool); !redeemed {
+		t.Fatalf("expected cloned auth file to be marked redeemed, got %+v", fileB)
+	}
+}
+
 func TestCodexCardStoreRedeemRejectsAlreadyRedeemedAuth(t *testing.T) {
 	authDir := t.TempDir()
 	store, err := getCodexCardStore(authDir)
@@ -489,4 +601,49 @@ func registerTestCodexAuthRecord(t *testing.T, manager *coreauth.Manager, id, pa
 	t.Cleanup(func() {
 		registry.GetGlobalRegistry().UnregisterClient(id)
 	})
+}
+
+func writeTestCodexAuthContent(t *testing.T, dir, name string, body []byte) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatalf("write auth file %s: %v", name, err)
+	}
+	return path
+}
+
+func mustCodexAuthMetadata(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	metadata := make(map[string]any)
+	if err := json.Unmarshal(body, &metadata); err != nil {
+		t.Fatalf("unmarshal auth metadata: %v", err)
+	}
+	return metadata
+}
+
+func registerTestCodexAuthWithMetadata(t *testing.T, manager *coreauth.Manager, id, path string, metadata map[string]any) {
+	t.Helper()
+	attrs := map[string]string{"path": path}
+	_, err := manager.Register(context.Background(), &coreauth.Auth{
+		ID:         id,
+		Provider:   "codex",
+		FileName:   filepath.Base(path),
+		Status:     coreauth.StatusActive,
+		Attributes: attrs,
+		Metadata:   cloneTestMetadata(metadata),
+	})
+	if err != nil {
+		t.Fatalf("register auth %s: %v", id, err)
+	}
+}
+
+func cloneTestMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = value
+	}
+	return out
 }

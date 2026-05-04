@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	crand "crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -47,29 +48,32 @@ type codexCardStoreFile struct {
 }
 
 type codexCardRecord struct {
-	Code           string     `json:"code"`
-	Source         string     `json:"source"`
-	Status         string     `json:"status"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	RedeemedAt     *time.Time `json:"redeemed_at,omitempty"`
-	RedeemedFile   string     `json:"redeemed_file,omitempty"`
-	RedeemedAuthID string     `json:"redeemed_auth_id,omitempty"`
-	Note           string     `json:"note,omitempty"`
+	Code             string     `json:"code"`
+	Source           string     `json:"source"`
+	Status           string     `json:"status"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	RedeemedAt       *time.Time `json:"redeemed_at,omitempty"`
+	RedeemedFile     string     `json:"redeemed_file,omitempty"`
+	RedeemedAuthID   string     `json:"redeemed_auth_id,omitempty"`
+	RedeemedAuthKeys []string   `json:"redeemed_auth_keys,omitempty"`
+	Note             string     `json:"note,omitempty"`
 }
 
 type codexAuthCandidate struct {
-	ID       string
-	FilePath string
-	FileName string
+	ID              string
+	FilePath        string
+	FileName        string
+	ReservationKeys []string
 }
 
 type codexSelectedAuth struct {
-	CardCode string
-	AuthID   string
-	FilePath string
-	FileName string
-	Data     []byte
+	CardCode        string
+	AuthID          string
+	FilePath        string
+	FileName        string
+	Data            []byte
+	ReservationKeys []string
 }
 
 type codexCardGenerateRequest struct {
@@ -406,7 +410,7 @@ func (s *codexCardStore) deleteCodes(codes []string) ([]string, []string, error)
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(record.Status), codexCardStatusRedeemed) {
-			removeCodexAuthSelectionKeys(s.redeemedAuthKeySet, record.RedeemedAuthID, record.RedeemedFile, "")
+			removeCodexAuthKeys(s.redeemedAuthKeySet, codexAuthRecordKeys(record))
 		}
 		delete(s.cards, code)
 		deleted = append(deleted, code)
@@ -481,7 +485,7 @@ func (s *codexCardStore) redeemedAuthKeysLocked() map[string]struct{} {
 		if !strings.EqualFold(strings.TrimSpace(record.Status), codexCardStatusRedeemed) {
 			continue
 		}
-		addCodexAuthSelectionKeys(keys, record.RedeemedAuthID, record.RedeemedFile, "")
+		addCodexAuthKeys(keys, codexAuthRecordKeys(record))
 	}
 	return keys
 }
@@ -514,8 +518,14 @@ func (s *codexCardStore) redeem(codes []string, files []codexSelectedAuth) error
 	}
 	redeemedKeys := s.redeemedAuthKeysLocked()
 	selectedKeys := make(map[string]struct{})
-	for _, file := range files {
-		keys := codexAuthSelectionKeys(file.AuthID, file.FileName, file.FilePath)
+	reservationKeysByIndex := make([][]string, len(files))
+	for i, file := range files {
+		keys := file.ReservationKeys
+		if len(keys) == 0 {
+			keys = codexAuthReservationKeysFromData(file.Data, file.AuthID, file.FileName, file.FilePath)
+		}
+		keys = normalizeCodexAuthKeys(keys...)
+		reservationKeysByIndex[i] = append([]string(nil), keys...)
 		for _, key := range keys {
 			if _, used := redeemedKeys[key]; used {
 				return fmt.Errorf("codex auth file already redeemed: %s", file.FileName)
@@ -530,6 +540,7 @@ func (s *codexCardStore) redeem(codes []string, files []codexSelectedAuth) error
 	}
 	for i, raw := range codes {
 		code, _ := normalizeCodexCardCodeValidated(raw)
+		keys := reservationKeysByIndex[i]
 		record := s.cards[code]
 		record.Status = codexCardStatusRedeemed
 		record.UpdatedAt = now
@@ -537,10 +548,11 @@ func (s *codexCardStore) redeem(codes []string, files []codexSelectedAuth) error
 		record.RedeemedAt = &redeemedAt
 		record.RedeemedFile = files[i].FileName
 		record.RedeemedAuthID = files[i].AuthID
+		record.RedeemedAuthKeys = append([]string(nil), keys...)
 		if s.redeemedAuthKeySet == nil {
 			s.redeemedAuthKeySet = make(map[string]struct{})
 		}
-		addCodexAuthSelectionKeys(s.redeemedAuthKeySet, files[i].AuthID, files[i].FileName, files[i].FilePath)
+		addCodexAuthKeys(s.redeemedAuthKeySet, keys)
 	}
 	s.updatedAt = now
 	return s.saveLocked()
@@ -645,42 +657,6 @@ func shouldPreserveCodexCardCodeCase(code string, extractedFromKeyParam bool) bo
 	return false
 }
 
-func addCodexAuthSelectionKeys(keys map[string]struct{}, authID, fileName, filePath string) {
-	if keys == nil {
-		return
-	}
-	for _, key := range codexAuthSelectionKeys(authID, fileName, filePath) {
-		keys[key] = struct{}{}
-	}
-}
-
-func removeCodexAuthSelectionKeys(keys map[string]struct{}, authID, fileName, filePath string) {
-	if keys == nil {
-		return
-	}
-	targets := codexAuthSelectionKeys(authID, fileName, filePath)
-	if len(targets) == 0 {
-		return
-	}
-	targetSet := make(map[string]struct{}, len(targets))
-	for _, target := range targets {
-		if strings.TrimSpace(target) != "" {
-			targetSet[target] = struct{}{}
-		}
-	}
-	for key := range keys {
-		normalizedKey := strings.ToLower(strings.TrimSpace(key))
-		if _, ok := targetSet[normalizedKey]; ok {
-			delete(keys, key)
-			continue
-		}
-		base := strings.ToLower(strings.TrimSpace(filepath.Base(filepath.Clean(normalizedKey))))
-		if _, ok := targetSet[base]; ok {
-			delete(keys, key)
-		}
-	}
-}
-
 func codexAuthSelectionKeys(authID, fileName, filePath string) []string {
 	rawValues := []string{authID, fileName, filePath}
 	seen := make(map[string]struct{})
@@ -714,12 +690,143 @@ func codexAuthAlreadyRedeemed(redeemed map[string]struct{}, candidate codexAuthC
 	if len(redeemed) == 0 {
 		return false
 	}
-	for _, key := range codexAuthSelectionKeys(candidate.ID, candidate.FileName, candidate.FilePath) {
+	for _, key := range codexAuthCandidateKeys(candidate) {
 		if _, ok := redeemed[key]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+func codexAuthCandidateKeys(candidate codexAuthCandidate) []string {
+	keys := codexAuthSelectionKeys(candidate.ID, candidate.FileName, candidate.FilePath)
+	keys = append(keys, candidate.ReservationKeys...)
+	return normalizeCodexAuthKeys(keys...)
+}
+
+func codexAuthReservationKeys(authID, fileName, filePath string, metadata map[string]any) []string {
+	keys := codexAuthSelectionKeys(authID, fileName, filePath)
+	if contentKey := codexAuthContentReservationKey(metadata); contentKey != "" {
+		keys = append(keys, contentKey)
+	}
+	return normalizeCodexAuthKeys(keys...)
+}
+
+func codexAuthReservationKeysFromData(data []byte, authID, fileName, filePath string) []string {
+	if len(data) == 0 {
+		return codexAuthSelectionKeys(authID, fileName, filePath)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return codexAuthSelectionKeys(authID, fileName, filePath)
+	}
+	return codexAuthReservationKeys(authID, fileName, filePath, metadata)
+}
+
+func codexAuthContentReservationKey(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	fingerprint := codexAuthContentFingerprint(metadata)
+	if fingerprint == "" {
+		return ""
+	}
+	return "content:sha256:" + fingerprint
+}
+
+func codexAuthContentFingerprint(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	email := strings.ToLower(strings.TrimSpace(codexAuthMetadataValue(metadata, "email")))
+	accountID := strings.ToLower(strings.TrimSpace(codexAuthMetadataValue(metadata, "account_id")))
+	refreshToken := strings.TrimSpace(codexAuthMetadataValue(metadata, "refresh_token"))
+	idToken := strings.TrimSpace(codexAuthMetadataValue(metadata, "id_token"))
+	if email == "" && accountID == "" && refreshToken == "" && idToken == "" {
+		return ""
+	}
+	components := []string{
+		strings.ToLower(strings.TrimSpace(codexAuthMetadataValue(metadata, "type"))),
+		email,
+		accountID,
+		refreshToken,
+		idToken,
+	}
+	var builder strings.Builder
+	for _, component := range components {
+		builder.WriteString(component)
+		builder.WriteByte(0x1f)
+	}
+	sum := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+func codexAuthMetadataValue(metadata map[string]any, key string) string {
+	if v := stringValue(metadata, key); v != "" {
+		return v
+	}
+	if len(metadata) == 0 {
+		return ""
+	}
+	tokenRaw, ok := metadata["token"]
+	if !ok || tokenRaw == nil {
+		return ""
+	}
+	switch typed := tokenRaw.(type) {
+	case map[string]any:
+		if v, ok := typed[key].(string); ok {
+			return strings.TrimSpace(v)
+		}
+	case map[string]string:
+		if v := strings.TrimSpace(typed[key]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func codexAuthRecordKeys(record *codexCardRecord) []string {
+	if record == nil {
+		return nil
+	}
+	keys := append([]string(nil), record.RedeemedAuthKeys...)
+	keys = append(keys, codexAuthSelectionKeys(record.RedeemedAuthID, record.RedeemedFile, "")...)
+	return normalizeCodexAuthKeys(keys...)
+}
+
+func normalizeCodexAuthKeys(keys ...string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.ToLower(strings.TrimSpace(raw))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
+}
+
+func addCodexAuthKeys(keys map[string]struct{}, values []string) {
+	if keys == nil {
+		return
+	}
+	for _, key := range normalizeCodexAuthKeys(values...) {
+		keys[key] = struct{}{}
+	}
+}
+
+func removeCodexAuthKeys(keys map[string]struct{}, values []string) {
+	if keys == nil {
+		return
+	}
+	for _, target := range normalizeCodexAuthKeys(values...) {
+		delete(keys, target)
+	}
 }
 
 func splitCodexCardInput(req codexCardImportRequest) []string {
@@ -1101,6 +1208,11 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errLoad.Error()})
 		return
 	}
+	zipBytes, zipName, errZip := buildCodexAuthZip(files)
+	if errZip != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errZip.Error()})
+		return
+	}
 	if errRedeem := store.redeem(cardCodes, files); errRedeem != nil {
 		status := http.StatusConflict
 		if strings.Contains(strings.ToLower(errRedeem.Error()), "not found") {
@@ -1109,8 +1221,8 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(status, gin.H{"error": errRedeem.Error()})
 		return
 	}
-	if errZip := writeCodexAuthZip(c, files); errZip != nil {
-		log.WithError(errZip).Error("failed to write codex auth zip")
+	if errWrite := writeCodexAuthZip(c, zipName, zipBytes); errWrite != nil {
+		log.WithError(errWrite).Error("failed to write codex auth zip")
 		return
 	}
 }
@@ -1157,9 +1269,10 @@ func (h *Handler) collectCodexAuthCandidates(ctx context.Context, redeemedAuths 
 			continue
 		}
 		candidate := codexAuthCandidate{
-			ID:       auth.ID,
-			FilePath: cleaned,
-			FileName: filepath.Base(cleaned),
+			ID:              auth.ID,
+			FilePath:        cleaned,
+			FileName:        filepath.Base(cleaned),
+			ReservationKeys: codexAuthReservationKeys(auth.ID, filepath.Base(cleaned), cleaned, auth.Metadata),
 		}
 		if codexAuthAlreadyRedeemed(redeemedAuths, candidate) {
 			continue
@@ -1381,43 +1494,54 @@ func (h *Handler) loadCodexAuthFiles(candidates []codexAuthCandidate) ([]codexSe
 			return nil, fmt.Errorf("read auth file %s: %w", candidate.FilePath, errRead)
 		}
 		out = append(out, codexSelectedAuth{
-			AuthID:   candidate.ID,
-			FilePath: candidate.FilePath,
-			FileName: candidate.FileName,
-			Data:     data,
+			AuthID:          candidate.ID,
+			FilePath:        candidate.FilePath,
+			FileName:        candidate.FileName,
+			Data:            data,
+			ReservationKeys: append([]string(nil), candidate.ReservationKeys...),
 		})
 	}
 	return out, nil
 }
 
-func writeCodexAuthZip(c *gin.Context, files []codexSelectedAuth) error {
-	if c == nil {
-		return fmt.Errorf("gin context is nil")
-	}
+func buildCodexAuthZip(files []codexSelectedAuth) ([]byte, string, error) {
 	if len(files) == 0 {
-		return fmt.Errorf("no codex auth files selected")
+		return nil, "", fmt.Errorf("no codex auth files selected")
 	}
 	zipName := fmt.Sprintf("codex-auth-files-%s.zip", time.Now().UTC().Format("20060102-150405"))
-	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", zipName))
-	c.Header("Cache-Control", "no-store")
-	c.Status(http.StatusOK)
-
-	writer := zip.NewWriter(c.Writer)
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
 	for _, file := range files {
 		name := safeCodexZipEntryName(file.FileName)
 		entry, errCreate := writer.Create(name)
 		if errCreate != nil {
 			_ = writer.Close()
-			return fmt.Errorf("create zip entry %s: %w", name, errCreate)
+			return nil, "", fmt.Errorf("create zip entry %s: %w", name, errCreate)
 		}
 		if _, errWrite := io.Copy(entry, bytes.NewReader(file.Data)); errWrite != nil {
 			_ = writer.Close()
-			return fmt.Errorf("write zip entry %s: %w", name, errWrite)
+			return nil, "", fmt.Errorf("write zip entry %s: %w", name, errWrite)
 		}
 	}
 	if errClose := writer.Close(); errClose != nil {
-		return fmt.Errorf("close zip writer: %w", errClose)
+		return nil, "", fmt.Errorf("close zip writer: %w", errClose)
+	}
+	return append([]byte(nil), buffer.Bytes()...), zipName, nil
+}
+
+func writeCodexAuthZip(c *gin.Context, zipName string, zipBytes []byte) error {
+	if c == nil {
+		return fmt.Errorf("gin context is nil")
+	}
+	if len(zipBytes) == 0 {
+		return fmt.Errorf("no codex auth zip data available")
+	}
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", zipName))
+	c.Header("Cache-Control", "no-store")
+	c.Status(http.StatusOK)
+	if _, errWrite := c.Writer.Write(zipBytes); errWrite != nil {
+		return fmt.Errorf("write zip response: %w", errWrite)
 	}
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()
