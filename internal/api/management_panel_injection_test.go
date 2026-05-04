@@ -30,6 +30,41 @@ func TestPatchQuotaManagementPanel(t *testing.T) {
 	assertNotContains(t, patched, "let t=g===`all`?`all`:`page`")
 }
 
+func TestPatchQuotaManagementPanelThrottlesRefreshAll(t *testing.T) {
+	input := []byte("let i=await Promise.all(n.map(async n=>{try{let r=await e.fetchQuota(n,t);return{name:n.name,status:`success`,data:r}}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);return{name:n.name,status:`error`,error:r,errorStatus:i}}}));if(c!==a.current)return;r(n=>{let r={...n};return i.forEach(n=>{n.status===`success`?r[n.name]=e.buildSuccessState(n.data):r[n.name]=e.buildErrorState(n.error||t(`common.unknown_error`),n.errorStatus)}),r})")
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "window.__CPA_QUOTA_REFRESH_CONCURRENCY")
+	assertContains(t, patched, "Math.min(3")
+	assertContains(t, patched, "Array.from({length:Math.min(d,n.length)},()=>f())")
+	assertContains(t, patched, "c===a.current&&r(t=>({...t,[o.name]:e.buildSuccessState(n)}))")
+	assertNotContains(t, patched, "Promise.all(n.map(async n=>")
+}
+
+func TestPatchQuotaManagementPanelDispatchesAuthFilesUpdateEvent(t *testing.T) {
+	input := []byte("finally{c===a.current&&(s(!1),i.current=!1)}}")
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "cli-proxy-auth-files-updated")
+	assertContains(t, patched, "source:`quota-refresh`")
+	assertContains(t, patched, "type:e.type")
+	assertContains(t, patched, "scope:o")
+	assertNotContains(t, patched, "finally{c===a.current&&(s(!1),i.current=!1)}}")
+}
+
+func TestPatchAuthFilesPageRefreshesAfterQuotaUpdateEvent(t *testing.T) {
+	input := []byte("a_(ot),(0,y.useEffect)(()=>{a&&(ce(),Oe(),ke())},[a,ce,Oe,ke])")
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "window.addEventListener(`cli-proxy-auth-files-updated`,e)")
+	assertContains(t, patched, "window.removeEventListener(`cli-proxy-auth-files-updated`,e)")
+	assertContains(t, patched, "window.location.hash===`#/auth-files`&&ot().catch(()=>{})")
+	assertContains(t, patched, "(0,y.useEffect)(()=>{a&&(ce(),Oe(),ke())},[a,ce,Oe,ke])")
+}
+
 func TestPatchAuthFilesUploadResponseIncludesDuplicateCount(t *testing.T) {
 	input := []byte("Bh=e=>Array.isArray(e)?zh(e.map(e=>String(e??``))):[],Vh=e=>Array.isArray(e)?e.reduce((e,t)=>{if(!t||typeof t!=`object`)return e;let n=t,r=String(n.name??``).trim(),i=typeof n.error==`string`?n.error.trim():typeof n.message==`string`?n.message.trim():``;return!r&&!i||e.push({name:r,error:i||`Unknown error`}),e},[]):[],Hh=(e,t)=>{let n=new Set(t.map(e=>e.name.trim()).filter(Boolean));return n.size===0?[...e]:e.filter(e=>!n.has(e))},Uh=(e,t)=>{let n=Vh(e?.failed),r=Bh(e?.files),i=typeof e?.uploaded==`number`?e.uploaded:r.length>0?r.length:+(t.length===1&&n.length===0),a=r;if(a.length===0&&i>0)if(n.length===0&&i===t.length)a=[...t];else{let e=Hh(t,n);e.length===i&&(a=e)}return{status:typeof e?.status==`string`?e.status:n.length>0?`partial`:`ok`,uploaded:i,files:a,failed:n}},Wh=")
 
@@ -121,6 +156,13 @@ func TestAuthFileCodexStatsCountsUnextractedOnlyForNormalFiles(t *testing.T) {
 	assertNotContains(t, script, "stats.banned += 1;\n        return;")
 	assertContains(t, script, "未提取=状态正常且尚未分配给用户")
 	assertContains(t, script, "已提取=已分配给用户")
+}
+
+func TestAuthFileCodexStatsRefreshesAfterQuotaUpdateEvent(t *testing.T) {
+	script := []byte(authFileCodexStatsScript)
+
+	assertContains(t, script, "window.addEventListener(\"cli-proxy-auth-files-updated\"")
+	assertContains(t, script, "setTimeout(function () { refreshStats(true); }, 150);")
 }
 
 func assertContains(t *testing.T, data []byte, want string) {

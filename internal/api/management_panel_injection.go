@@ -98,7 +98,15 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "let i=await Promise.all(n.map(async n=>{try{let r=await e.fetchQuota(n,t);return{name:n.name,status:`success`,data:r}}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);return{name:n.name,status:`error`,error:r,errorStatus:i}}}));if(c!==a.current)return;r(n=>{let r={...n};return i.forEach(n=>{n.status===`success`?r[n.name]=e.buildSuccessState(n.data):r[n.name]=e.buildErrorState(n.error||t(`common.unknown_error`),n.errorStatus)}),r})",
-			new: "await Promise.all(n.map(async n=>{try{let i=await e.fetchQuota(n,t);c===a.current&&r(t=>({...t,[n.name]:e.buildSuccessState(i)}))}catch(i){let o=i instanceof Error?i.message:t(`common.unknown_error`),s=Ry(i);c===a.current&&r(t=>({...t,[n.name]:e.buildErrorState(o,s)}))}}))",
+			new: "let u=0,d=Math.max(1,Math.min(3,Math.floor(Number(window.__CPA_QUOTA_REFRESH_CONCURRENCY)||3))),f=async()=>{for(;;){let i=u++;if(i>=n.length)return;let o=n[i];try{let n=await e.fetchQuota(o,t);c===a.current&&r(t=>({...t,[o.name]:e.buildSuccessState(n)}))}catch(n){let i=n instanceof Error?n.message:t(`common.unknown_error`),s=Ry(n);c===a.current&&r(t=>({...t,[o.name]:e.buildErrorState(i,s)}))}}};await Promise.all(Array.from({length:Math.min(d,n.length)},()=>f()))",
+		},
+		{
+			old: "finally{c===a.current&&(s(!1),i.current=!1)}}",
+			new: "finally{c===a.current&&(s(!1),i.current=!1,typeof window<`u`&&window.dispatchEvent(new CustomEvent(`cli-proxy-auth-files-updated`,{detail:{source:`quota-refresh`,type:e.type,scope:o}})))}}",
+		},
+		{
+			old: "a_(ot),(0,y.useEffect)(()=>{a&&(ce(),Oe(),ke())},[a,ce,Oe,ke])",
+			new: "a_(ot),(0,y.useEffect)(()=>{let e=()=>{window.location.hash===`#/auth-files`&&ot().catch(()=>{})};return window.addEventListener(`cli-proxy-auth-files-updated`,e),()=>window.removeEventListener(`cli-proxy-auth-files-updated`,e)},[ot]),(0,y.useEffect)(()=>{a&&(ce(),Oe(),ke())},[a,ce,Oe,ke])",
 		},
 		{
 			old: "Vv=e=>Bv(e).length>0",
@@ -1051,6 +1059,9 @@ const authFileCodexStatsScript = `
     observer.observe(document.body, {childList: true, subtree: true});
     window.addEventListener("hashchange", function () {
       setTimeout(function () { refreshStats(true); }, 100);
+    });
+    window.addEventListener("cli-proxy-auth-files-updated", function () {
+      setTimeout(function () { refreshStats(true); }, 150);
     });
     window.addEventListener("focus", function () { refreshStats(false); });
   }
