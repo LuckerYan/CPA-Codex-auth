@@ -106,6 +106,18 @@ func TestCodexCardManagementPanelIncludesAuthFilesFilterStyles(t *testing.T) {
 	assertContains(t, script, "::-webkit-details-marker{display:none!important}")
 }
 
+func TestAuthFileCodexStatsCountsExtractionIndependentlyFromBanned(t *testing.T) {
+	script := []byte(authFileCodexStatsScript)
+
+	assertContains(t, script, "if (isBannedFile(file)) {")
+	assertContains(t, script, "stats.banned += 1;")
+	assertContains(t, script, "} else {\n        stats.normal += 1;")
+	assertContains(t, script, "if (isExtractedFile(file)) stats.extracted += 1;")
+	assertNotContains(t, script, "stats.banned += 1;\n        return;")
+	assertContains(t, script, "未提取=尚未分配给用户")
+	assertContains(t, script, "已提取=已分配给用户")
+}
+
 func assertContains(t *testing.T, data []byte, want string) {
 	t.Helper()
 	if !bytes.Contains(data, []byte(want)) {

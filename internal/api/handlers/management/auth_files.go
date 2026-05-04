@@ -555,9 +555,9 @@ func buildCodexAuthStats(files []gin.H) gin.H {
 		stats["total"] = stats["total"].(int) + 1
 		if isBannedAuthFileEntry(file) {
 			stats["banned"] = stats["banned"].(int) + 1
-			continue
+		} else {
+			stats["normal"] = stats["normal"].(int) + 1
 		}
-		stats["normal"] = stats["normal"].(int) + 1
 		if boolFromGinH(file, "codex_redeemed") || boolFromGinH(file, "codex_extracted") {
 			stats["extracted"] = stats["extracted"].(int) + 1
 		} else {

@@ -357,6 +357,45 @@ func TestUploadAuthFile_BatchMultipart_CountsExistingFileNamesAsDuplicates(t *te
 	}
 }
 
+func TestBuildCodexAuthStatsCountsExtractionIndependentlyFromBanned(t *testing.T) {
+	stats := buildCodexAuthStats([]gin.H{
+		{
+			"type":            "codex",
+			"account_status":  "active",
+			"codex_redeemed":  true,
+			"codex_extracted": true,
+		},
+		{
+			"type":            "codex",
+			"account_status":  "banned",
+			"codex_redeemed":  true,
+			"codex_extracted": true,
+		},
+		{
+			"type":           "codex",
+			"account_status": "banned",
+		},
+		{
+			"type":           "codex",
+			"account_status": "active",
+		},
+	})
+
+	assertCodexStat(t, stats, "total", 4)
+	assertCodexStat(t, stats, "normal", 2)
+	assertCodexStat(t, stats, "banned", 2)
+	assertCodexStat(t, stats, "extracted", 2)
+	assertCodexStat(t, stats, "unextracted", 2)
+}
+
+func assertCodexStat(t *testing.T, stats gin.H, key string, want int) {
+	t.Helper()
+	got, ok := stats[key].(int)
+	if !ok || got != want {
+		t.Fatalf("expected %s=%d, got %#v in stats %#v", key, want, stats[key], stats)
+	}
+}
+
 func TestDeleteAuthFile_BatchQuery(t *testing.T) {
 	t.Setenv("MANAGEMENT_PASSWORD", "")
 	gin.SetMode(gin.TestMode)

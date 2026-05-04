@@ -933,9 +933,9 @@ const authFileCodexStatsScript = `
       stats.total += 1;
       if (isBannedFile(file)) {
         stats.banned += 1;
-        return;
+      } else {
+        stats.normal += 1;
       }
-      stats.normal += 1;
       if (isExtractedFile(file)) stats.extracted += 1;
       else stats.unextracted += 1;
     });
@@ -967,8 +967,8 @@ const authFileCodexStatsScript = `
       ["账号总数", stats.total, "total", ""],
       ["正常", stats.normal, "normal", ""],
       ["封禁", stats.banned, "banned", ""],
-      ["未提取", stats.unextracted, "unextracted", "未提取=账号状态为正常且尚未分配给用户"],
-      ["已提取", stats.extracted, "extracted", "已提取=账号状态为正常且已分配给用户"]
+      ["未提取", stats.unextracted, "unextracted", "未提取=尚未分配给用户"],
+      ["已提取", stats.extracted, "extracted", "已提取=已分配给用户"]
     ];
     panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计' + (loading ? ' · 更新中' : '') + '</div>' + items.map(function (item) {
       return '<div class="auth-file-codex-stat ' + item[2] + '"' + (item[3] ? ' title="' + escapeHTML(item[3]) + '"' : '') + '><span class="auth-file-codex-stat-label">' + escapeHTML(item[0]) + '</span><span class="auth-file-codex-stat-value">' + escapeHTML(item[1]) + '</span></div>';
