@@ -372,7 +372,7 @@ func isAuthBlockedForModel(auth *Auth, model string, now time.Time) (bool, block
 	if auth == nil {
 		return true, blockReasonOther, time.Time{}
 	}
-	if auth.Disabled || auth.Status == StatusDisabled {
+	if auth.IsBlocked() {
 		return true, blockReasonDisabled, time.Time{}
 	}
 	if model != "" {
@@ -385,7 +385,7 @@ func isAuthBlockedForModel(auth *Auth, model string, now time.Time) (bool, block
 				}
 			}
 			if ok && state != nil {
-				if state.Status == StatusDisabled {
+				if IsBlockedStatus(state.Status) {
 					return true, blockReasonDisabled, time.Time{}
 				}
 				if state.Unavailable {

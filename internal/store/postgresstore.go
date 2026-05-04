@@ -211,6 +211,10 @@ func (s *PostgresStore) Save(ctx context.Context, auth *cliproxyauth.Auth) (stri
 	if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("postgres store: create auth directory: %w", err)
 	}
+	if auth.Metadata != nil {
+		auth.Metadata["disabled"] = auth.Disabled
+		cliproxyauth.SyncPersistedAccountStatus(auth)
+	}
 
 	switch {
 	case auth.Storage != nil:
@@ -310,6 +314,7 @@ func (s *PostgresStore) List(ctx context.Context) ([]*cliproxyauth.Auth, error) 
 			LastRefreshedAt:  time.Time{},
 			NextRefreshAfter: time.Time{},
 		}
+		cliproxyauth.ApplyPersistedAccountStatus(auth)
 		cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
 		auths = append(auths, auth)
 	}

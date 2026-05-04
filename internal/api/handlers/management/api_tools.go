@@ -208,12 +208,25 @@ func (h *Handler) APICall(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read response"})
 		return
 	}
+	if auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") && coreauth.IsAuthenticationTokenInvalidated(resp.StatusCode, string(respBody)) {
+		h.markAuthBanned(c.Request.Context(), auth.ID, coreauth.TokenInvalidatedMessage(string(respBody)))
+	}
 
 	c.JSON(http.StatusOK, apiCallResponse{
 		StatusCode: resp.StatusCode,
 		Header:     resp.Header,
 		Body:       string(respBody),
 	})
+}
+
+func (h *Handler) markAuthBanned(ctx context.Context, authID string, message string) {
+	if h == nil || h.authManager == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	h.authManager.MarkBanned(ctx, authID, message)
 }
 
 func firstNonEmptyString(values ...*string) string {

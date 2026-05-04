@@ -181,6 +181,10 @@ func (s *ObjectTokenStore) Save(ctx context.Context, auth *cliproxyauth.Auth) (s
 	if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("object store: create auth directory: %w", err)
 	}
+	if auth.Metadata != nil {
+		auth.Metadata["disabled"] = auth.Disabled
+		cliproxyauth.SyncPersistedAccountStatus(auth)
+	}
 
 	switch {
 	case auth.Storage != nil:
@@ -595,6 +599,7 @@ func (s *ObjectTokenStore) readAuthFile(path, baseDir string) (*cliproxyauth.Aut
 		LastRefreshedAt:  time.Time{},
 		NextRefreshAfter: time.Time{},
 	}
+	cliproxyauth.ApplyPersistedAccountStatus(auth)
 	cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
 	return auth, nil
 }

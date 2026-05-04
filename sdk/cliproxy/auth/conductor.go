@@ -1129,7 +1129,7 @@ func (m *Manager) Update(ctx context.Context, auth *Auth) (*Auth, error) {
 		auth.Success = existing.Success
 		auth.Failed = existing.Failed
 		auth.recentRequests = existing.recentRequests
-		if !existing.Disabled && existing.Status != StatusDisabled && !auth.Disabled && auth.Status != StatusDisabled {
+		if !existing.IsBlocked() && !auth.IsBlocked() {
 			if len(auth.ModelStates) == 0 && len(existing.ModelStates) > 0 {
 				auth.ModelStates = existing.ModelStates
 			}
@@ -1147,6 +1147,37 @@ func (m *Manager) Update(ctx context.Context, auth *Auth) (*Auth, error) {
 	_ = m.persist(ctx, auth)
 	m.hook.OnAuthUpdated(ctx, auth.Clone())
 	return auth.Clone(), nil
+}
+
+// MarkBanned marks an auth entry as banned and persists the state.
+func (m *Manager) MarkBanned(ctx context.Context, authID string, message string) bool {
+	if m == nil {
+		return false
+	}
+	authID = strings.TrimSpace(authID)
+	if authID == "" {
+		return false
+	}
+	now := time.Now()
+	var authSnapshot *Auth
+	m.mu.Lock()
+	if auth, ok := m.auths[authID]; ok && auth != nil {
+		MarkAuthBanned(auth, message, now)
+		m.auths[authID] = auth
+		authSnapshot = auth.Clone()
+	}
+	m.mu.Unlock()
+	if authSnapshot == nil {
+		return false
+	}
+	m.rebuildAPIKeyModelAliasFromRuntimeConfig()
+	if m.scheduler != nil {
+		m.scheduler.upsertAuth(authSnapshot)
+	}
+	m.queueRefreshReschedule(authID)
+	_ = m.persist(ctx, authSnapshot)
+	m.hook.OnAuthUpdated(ctx, authSnapshot.Clone())
+	return true
 }
 
 // Load resets manager state from the backing store.
@@ -1235,8 +1266,12 @@ func (m *Manager) ExecuteWithAuthID(ctx context.Context, authID string, req clip
 	if !okAuth || auth == nil {
 		return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "auth not found"}
 	}
-	if auth.Disabled || auth.Status == StatusDisabled {
-		return cliproxyexecutor.Response{}, &Error{Code: "auth_unavailable", Message: "auth disabled"}
+	if auth.IsBlocked() {
+		message := "auth disabled"
+		if auth.IsBanned() {
+			message = "auth banned"
+		}
+		return cliproxyexecutor.Response{}, &Error{Code: "auth_unavailable", Message: message}
 	}
 	provider := strings.ToLower(strings.TrimSpace(auth.Provider))
 	if provider == "" {
@@ -2112,6 +2147,19 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			auth.Failed++
 		}
 
+		if !result.Success && strings.EqualFold(strings.TrimSpace(result.Provider), "codex") && result.Error != nil && IsAuthenticationTokenInvalidated(result.Error.HTTPStatus, result.Error.Message) {
+			MarkAuthBanned(auth, TokenInvalidatedMessage(result.Error.Message), now)
+			_ = m.persist(ctx, auth)
+			authSnapshot = auth.Clone()
+			m.mu.Unlock()
+			if m.scheduler != nil && authSnapshot != nil {
+				m.scheduler.upsertAuth(authSnapshot)
+			}
+			m.hook.OnResult(ctx, result)
+			m.hook.OnAuthUpdated(ctx, authSnapshot.Clone())
+			return
+		}
+
 		if result.Success {
 			if result.Model != "" {
 				state := ensureModelState(auth, result.Model)
@@ -2312,7 +2360,7 @@ func updateAggregatedAvailability(auth *Auth, now time.Time) {
 		}
 		hasState = true
 		stateUnavailable := false
-		if state.Status == StatusDisabled {
+		if IsBlockedStatus(state.Status) {
 			stateUnavailable = true
 		} else if state.Unavailable {
 			if state.NextRetryAfter.IsZero() {
@@ -2394,6 +2442,9 @@ func hasModelError(auth *Auth, now time.Time) bool {
 
 func clearAuthStateOnSuccess(auth *Auth, now time.Time) {
 	if auth == nil {
+		return
+	}
+	if auth.IsBanned() {
 		return
 	}
 	auth.Unavailable = false
@@ -2777,7 +2828,7 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 	}
 	registryRef := registry.GetGlobalRegistry()
 	for _, candidate := range m.auths {
-		if candidate.Provider != provider || candidate.Disabled {
+		if candidate.Provider != provider || candidate.IsBlocked() {
 			continue
 		}
 		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
@@ -2832,7 +2883,7 @@ func (m *Manager) pickNext(ctx context.Context, provider, model string, opts cli
 	if strings.TrimSpace(model) != "" {
 		m.mu.RLock()
 		for _, candidate := range m.auths {
-			if candidate == nil || candidate.Provider != provider || candidate.Disabled {
+			if candidate == nil || candidate.Provider != provider || candidate.IsBlocked() {
 				continue
 			}
 			if _, used := tried[candidate.ID]; used {
@@ -2910,7 +2961,7 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 	}
 	registryRef := registry.GetGlobalRegistry()
 	for _, candidate := range m.auths {
-		if candidate == nil || candidate.Disabled {
+		if candidate == nil || candidate.IsBlocked() {
 			continue
 		}
 		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
@@ -3005,7 +3056,7 @@ func (m *Manager) pickNextMixed(ctx context.Context, providers []string, model s
 		}
 		m.mu.RLock()
 		for _, candidate := range m.auths {
-			if candidate == nil || candidate.Disabled {
+			if candidate == nil || candidate.IsBlocked() {
 				continue
 			}
 			if _, ok := providerSet[strings.TrimSpace(strings.ToLower(candidate.Provider))]; !ok {
@@ -3069,7 +3120,7 @@ func (m *Manager) findAllAntigravityCreditsCandidateAuths(routeModel string, opt
 	var known []creditsCandidateEntry
 	var unknown []creditsCandidateEntry
 	for _, auth := range m.auths {
-		if auth == nil || auth.Disabled || auth.Status == StatusDisabled {
+		if auth == nil || auth.IsBlocked() {
 			continue
 		}
 		if pinnedAuthID != "" && auth.ID != pinnedAuthID {
@@ -3317,7 +3368,7 @@ func (m *Manager) queueRefreshReschedule(authID string) {
 }
 
 func (m *Manager) shouldRefresh(a *Auth, now time.Time) bool {
-	if a == nil || a.Disabled {
+	if a == nil || a.IsBlocked() {
 		return false
 	}
 	if !a.NextRefreshAfter.IsZero() && now.Before(a.NextRefreshAfter) {
@@ -3524,7 +3575,7 @@ func lookupMetadataTime(meta map[string]any, keys ...string) (time.Time, bool) {
 func (m *Manager) markRefreshPending(id string, now time.Time) bool {
 	m.mu.Lock()
 	auth, ok := m.auths[id]
-	if !ok || auth == nil || auth.Disabled {
+	if !ok || auth == nil || auth.IsBlocked() {
 		m.mu.Unlock()
 		return false
 	}
@@ -3564,6 +3615,10 @@ func (m *Manager) refreshAuth(ctx context.Context, id string) {
 	log.Debugf("refreshed %s, %s, %v", auth.Provider, auth.ID, err)
 	now := time.Now()
 	if err != nil {
+		if strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") && IsAuthenticationTokenInvalidatedError(err) {
+			m.MarkBanned(ctx, id, TokenInvalidatedMessage(err))
+			return
+		}
 		shouldReschedule := false
 		m.mu.Lock()
 		if current := m.auths[id]; current != nil {

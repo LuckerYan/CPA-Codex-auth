@@ -246,8 +246,10 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 	}
 	auths := h.authManager.List()
 	files := make([]gin.H, 0, len(auths))
+	redeemedAuths, resolvedAuthDir := h.codexAuthRedeemedKeysForList()
 	for _, auth := range auths {
 		if entry := h.buildAuthFileEntry(auth); entry != nil {
+			h.annotateCodexAuthExtractionStatus(entry, auth, redeemedAuths, resolvedAuthDir)
 			files = append(files, entry)
 		}
 	}
@@ -256,7 +258,7 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 		nameJ, _ := files[j]["name"].(string)
 		return strings.ToLower(nameI) < strings.ToLower(nameJ)
 	})
-	c.JSON(200, gin.H{"files": files})
+	c.JSON(200, gin.H{"files": files, "codex_auth_stats": buildCodexAuthStats(files)})
 }
 
 // GetAuthFileModels returns the models supported by a specific auth file
@@ -382,11 +384,17 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 		"label":          auth.Label,
 		"status":         auth.Status,
 		"status_message": auth.StatusMessage,
+		"account_status": coreauth.AccountStatusString(auth),
 		"disabled":       auth.Disabled,
 		"unavailable":    auth.Unavailable,
 		"runtime_only":   runtimeOnly,
 		"source":         "memory",
 		"size":           int64(0),
+	}
+	if msg := coreauth.PersistedAccountStatusMessage(auth.Metadata); msg != "" {
+		entry["account_status_message"] = msg
+	} else if coreauth.AccountStatus(auth) == coreauth.StatusBanned && strings.TrimSpace(auth.StatusMessage) != "" {
+		entry["account_status_message"] = strings.TrimSpace(auth.StatusMessage)
 	}
 	entry["success"] = auth.Success
 	entry["failed"] = auth.Failed
@@ -466,6 +474,118 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 		}
 	}
 	return entry
+}
+
+func (h *Handler) codexAuthRedeemedKeysForList() (map[string]struct{}, string) {
+	if h == nil || h.cfg == nil {
+		return nil, ""
+	}
+	authDir := strings.TrimSpace(h.cfg.AuthDir)
+	resolvedAuthDir := ""
+	if resolved, err := util.ResolveAuthDir(authDir); err == nil {
+		resolvedAuthDir = resolved
+	}
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		log.WithError(err).Debug("failed to load codex card store for auth file stats")
+		return nil, resolvedAuthDir
+	}
+	keys, err := store.redeemedAuthKeys()
+	if err != nil {
+		log.WithError(err).Debug("failed to load redeemed codex auth keys for auth file stats")
+		return nil, resolvedAuthDir
+	}
+	return keys, resolvedAuthDir
+}
+
+func (h *Handler) annotateCodexAuthExtractionStatus(entry gin.H, auth *coreauth.Auth, redeemedAuths map[string]struct{}, resolvedAuthDir string) {
+	if entry == nil || auth == nil {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
+		return
+	}
+	path := resolveCodexAuthPath(auth, resolvedAuthDir)
+	fileName := strings.TrimSpace(auth.FileName)
+	if fileName == "" {
+		fileName = strings.TrimSpace(auth.ID)
+	}
+	if path != "" {
+		fileName = filepath.Base(filepath.Clean(path))
+	}
+	redeemed := codexAuthAlreadyRedeemed(redeemedAuths, codexAuthCandidate{
+		ID:       auth.ID,
+		FileName: fileName,
+		FilePath: path,
+	})
+	entry["codex_redeemed"] = redeemed
+	entry["codex_extracted"] = redeemed
+	if redeemed {
+		entry["codex_extraction_status"] = codexCardStatusRedeemed
+	} else {
+		entry["codex_extraction_status"] = codexCardStatusUnused
+	}
+}
+
+func buildCodexAuthStats(files []gin.H) gin.H {
+	stats := gin.H{
+		"total":       0,
+		"normal":      0,
+		"banned":      0,
+		"unextracted": 0,
+		"extracted":   0,
+	}
+	for _, file := range files {
+		if !isCodexAuthFileEntry(file) {
+			continue
+		}
+		stats["total"] = stats["total"].(int) + 1
+		if isBannedAuthFileEntry(file) {
+			stats["banned"] = stats["banned"].(int) + 1
+			continue
+		}
+		stats["normal"] = stats["normal"].(int) + 1
+		if boolFromGinH(file, "codex_redeemed") || boolFromGinH(file, "codex_extracted") {
+			stats["extracted"] = stats["extracted"].(int) + 1
+		} else {
+			stats["unextracted"] = stats["unextracted"].(int) + 1
+		}
+	}
+	return stats
+}
+
+func isCodexAuthFileEntry(file gin.H) bool {
+	for _, key := range []string{"type", "provider"} {
+		if value, ok := file[key].(string); ok && strings.EqualFold(strings.TrimSpace(value), "codex") {
+			return true
+		}
+	}
+	return false
+}
+
+func isBannedAuthFileEntry(file gin.H) bool {
+	for _, key := range []string{"account_status", "accountStatus", "status"} {
+		if value, ok := file[key].(string); ok && strings.EqualFold(strings.TrimSpace(value), string(coreauth.StatusBanned)) {
+			return true
+		}
+	}
+	return false
+}
+
+func boolFromGinH(file gin.H, key string) bool {
+	value, ok := file[key]
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+		return err == nil && parsed
+	default:
+		return false
+	}
 }
 
 func extractCodexIDTokenClaims(auth *coreauth.Auth) gin.H {
@@ -1028,6 +1148,7 @@ func (h *Handler) buildAuthFromFileData(path string, data []byte) (*coreauth.Aut
 	if hasLastRefresh {
 		auth.LastRefreshedAt = lastRefresh
 	}
+	coreauth.ApplyPersistedAccountStatus(auth)
 	if h != nil && h.authManager != nil {
 		if existing, ok := h.authManager.GetByID(authID); ok {
 			auth.CreatedAt = existing.CreatedAt
@@ -1108,8 +1229,18 @@ func (h *Handler) PatchAuthFileStatus(c *gin.Context) {
 		targetAuth.Status = coreauth.StatusDisabled
 		targetAuth.StatusMessage = "disabled via management API"
 	} else {
-		targetAuth.Status = coreauth.StatusActive
-		targetAuth.StatusMessage = ""
+		if coreauth.AccountStatus(targetAuth) == coreauth.StatusBanned {
+			targetAuth.Status = coreauth.StatusBanned
+			if targetAuth.StatusMessage == "" {
+				targetAuth.StatusMessage = coreauth.PersistedAccountStatusMessage(targetAuth.Metadata)
+			}
+			if targetAuth.StatusMessage == "" {
+				targetAuth.StatusMessage = "token invalidated"
+			}
+		} else {
+			targetAuth.Status = coreauth.StatusActive
+			targetAuth.StatusMessage = ""
+		}
 	}
 	targetAuth.UpdatedAt = time.Now()
 

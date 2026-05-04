@@ -1141,7 +1141,7 @@ func (h *Handler) collectCodexAuthCandidates(ctx context.Context, redeemedAuths 
 		if !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
 			continue
 		}
-		if auth.Disabled || auth.Status == coreauth.StatusDisabled {
+		if auth.IsBlocked() {
 			continue
 		}
 		path := resolveCodexAuthPath(auth, resolvedAuthDir)
@@ -1264,6 +1264,9 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 		status := validationErrorStatus(errExec)
 		if status == http.StatusUnauthorized {
 			log.Debugf("codex auth %s failed validation with 401, trying another candidate", candidate.ID)
+			if coreauth.IsAuthenticationTokenInvalidatedError(errExec) {
+				h.authManager.MarkBanned(context.Background(), candidate.ID, coreauth.TokenInvalidatedMessage(errExec))
+			}
 		} else {
 			log.Debugf("codex auth %s failed validation: %v", candidate.ID, errExec)
 		}

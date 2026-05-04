@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -27,11 +28,20 @@ func injectCodexCardManagementPanel(data []byte) []byte {
 		return data
 	}
 	data = patchQuotaManagementPanel(data)
-	if bytes.Contains(data, []byte("codex-card-management-injection")) {
+	data = injectManagementPanelScript(data, "codex-card-management-injection", codexCardManagementPanelScript)
+	data = injectManagementPanelScript(data, "auth-file-codex-stats-injection", authFileCodexStatsScript)
+	return data
+}
+
+func injectManagementPanelScript(data []byte, id string, body string) []byte {
+	if len(data) == 0 || strings.TrimSpace(id) == "" || body == "" {
+		return data
+	}
+	if bytes.Contains(data, []byte(id)) {
 		return data
 	}
 	marker := []byte("</body>")
-	script := []byte(fmt.Sprintf("\n<script id=\"codex-card-management-injection\">\n%s\n</script>\n", codexCardManagementPanelScript))
+	script := []byte(fmt.Sprintf("\n<script id=\"%s\">\n%s\n</script>\n", id, body))
 	idx := bytes.LastIndex(bytes.ToLower(data), marker)
 	if idx < 0 {
 		out := make([]byte, 0, len(data)+len(script))
@@ -63,6 +73,14 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			new: "var pb=25,mb=1e3,",
 		},
 		{
+			old: "(0,B.jsx)(`span`,{className:Is.triggerIcon,\"aria-hidden\":`true`,children:(0,B.jsx)(fs,{size:14})})",
+			new: "(0,B.jsx)(`span`,{className:Is.triggerIcon,\"aria-hidden\":`true`,children:(0,B.jsx)(fs,{size:14})})",
+		},
+		{
+			old: "Hs=e=>{let t=e.getBoundingClientRect(),n=window.innerWidth,r=window.innerHeight,i=Math.min(t.width,Math.max(0,n-Ls*2)),a=Vs(t.left,Ls,Math.max(Ls,n-i-Ls)),o=r-t.bottom-Ls-Rs,s=t.top-Ls-Rs,c=o>=zs||o>=s?`down`:`up`,l=Math.max(0,Math.min(zs,c===`down`?o:s));return c===`down`?{position:`fixed`,top:t.bottom+Rs,left:a,width:i,maxHeight:l,zIndex:Bs}:{position:`fixed`,bottom:r-t.top+Rs,left:a,width:i,maxHeight:l,zIndex:Bs}}",
+			new: "Hs=e=>{let t=e.getBoundingClientRect(),n=window.innerWidth,r=window.innerHeight,i=Math.min(t.width,Math.max(0,n-Ls*2)),a=Vs(t.left,Ls,Math.max(Ls,n-i-Ls)),o=r-t.bottom-Ls-Rs,s=Math.max(0,Math.min(zs,o));return{position:`fixed`,top:t.bottom+Rs,left:a,width:i,maxHeight:s,zIndex:Bs}}",
+		},
+		{
 			old: "[c,l]=fb(380),[u,d]=(0,y.useState)(`paged`),[f,p]=(0,y.useState)(!1),m=(0,y.useMemo)",
 			new: "[c,l]=fb(380),[u,d]=(0,y.useState)(`paged`),[q,z]=(0,y.useState)(``),[f,p]=(0,y.useState)(!1),m=(0,y.useMemo)",
 		},
@@ -75,8 +93,32 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			new: "let t=m;t.length!==0&&O(t,`all`,E)",
 		},
 		{
+			old: "children:[(0,B.jsxs)(`div`,{className:sb.viewModeToggle,children:[",
+			new: "children:[g===`paged`&&(0,B.jsx)(`input`,{className:sb.pageSizeSelect,style:{width:160},type:`number`,min:`1`,step:`1`,inputMode:`numeric`,value:q||String(_),title:i(`auth_files.page_size_label`),\"aria-label\":i(`auth_files.page_size_label`),onFocus:()=>d(`paged`),onChange:e=>{d(`paged`),z(e.target.value.replace(/[^0-9]/g,``))}}),(0,B.jsxs)(`div`,{className:sb.viewModeToggle,children:[",
+		},
+		{
+			old: "let i=await Promise.all(n.map(async n=>{try{let r=await e.fetchQuota(n,t);return{name:n.name,status:`success`,data:r}}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);return{name:n.name,status:`error`,error:r,errorStatus:i}}}));if(c!==a.current)return;r(n=>{let r={...n};return i.forEach(n=>{n.status===`success`?r[n.name]=e.buildSuccessState(n.data):r[n.name]=e.buildErrorState(n.error||t(`common.unknown_error`),n.errorStatus)}),r})",
+			new: "await Promise.all(n.map(async n=>{try{let i=await e.fetchQuota(n,t);c===a.current&&r(t=>({...t,[n.name]:e.buildSuccessState(i)}))}catch(i){let o=i instanceof Error?i.message:t(`common.unknown_error`),s=Ry(i);c===a.current&&r(t=>({...t,[n.name]:e.buildErrorState(o,s)}))}}))",
+		},
+		{
+			old: "Vv=e=>Bv(e).length>0",
+			new: "Vv=e=>Bv(e).length>0||String(e.account_status??e.accountStatus??e.status??``).trim().toLowerCase()===`banned`",
+		},
+		{
+			old: "P=y?t(`auth_files.type_virtual`)||`虚拟认证文件`:n.disabled?t(`auth_files.health_status_disabled`):t(j?`auth_files.health_status_warning`:A?`auth_files.health_status_healthy`:`auth_files.status_toggle_label`),ee=y?G.stateBadgeVirtual:n.disabled?G.stateBadgeDisabled:j?G.stateBadgeWarning:G.stateBadgeActive;return",
+			new: "P=y?t(`auth_files.type_virtual`)||`虚拟认证文件`:n.disabled?t(`auth_files.health_status_disabled`):t(j?`auth_files.health_status_warning`:A?`auth_files.health_status_healthy`:`auth_files.status_toggle_label`),ee=y?G.stateBadgeVirtual:n.disabled?G.stateBadgeDisabled:j?G.stateBadgeWarning:G.stateBadgeActive,te=(n.type||``).toLowerCase()===`codex`,ne=String(n.account_status??n.accountStatus??n.status??``).trim().toLowerCase(),re=ne===`banned`,ie=re?`⛔ 封禁`:`✓ 正常`,ae=re?G.stateBadgeWarning:G.stateBadgeActive;return",
+		},
+		{
+			old: "(0,B.jsx)(`span`,{className:`${G.stateBadge} ${ee}`,children:P})]}),",
+			new: "(0,B.jsx)(`span`,{className:`${G.stateBadge} ${ee}`,children:P}),te&&(0,B.jsx)(`span`,{className:`${G.stateBadge} ${ae}`,title:`账号状态`,children:ie})]}),",
+		},
+		{
+			old: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`div`,{className:G.filterToggleGroup,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})",
+			new: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`details`,{className:`auth-files-display-options-menu`,children:[(0,B.jsxs)(`summary`,{className:`auth-files-display-options-trigger`,children:[(0,B.jsx)(`span`,{children:e(`auth_files.display_options_label`)}),(l||d||p)&&(0,B.jsx)(`span`,{className:`auth-files-display-options-count`,children:(l?1:0)+(d?1:0)+(p?1:0)}),(0,B.jsx)(`span`,{className:`auth-files-display-options-chevron`,children:`⌄`})]}),(0,B.jsxs)(`div`,{className:`${G.filterToggleGroup} auth-files-display-options-list`,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})]})",
+		},
+		{
 			old: "(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`${sb.viewModeButton} ${g===`all`?sb.viewModeButtonActive:``}`,onClick:()=>{m.length>mb?p(!0):d(`all`)},children:i(`auth_files.view_mode_all`)})",
-			new: "(0,B.jsx)(`input`,{className:sb.pageSizeSelect,type:`number`,min:`1`,step:`1`,inputMode:`numeric`,value:q,placeholder:String(qn),title:i(`auth_files.page_size_label`),\"aria-label\":i(`auth_files.page_size_label`),onFocus:()=>d(`paged`),onChange:e=>{d(`paged`),z(e.target.value.replace(/[^0-9]/g,``))}}),(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`${sb.viewModeButton} ${g===`all`?sb.viewModeButtonActive:``}`,onClick:()=>d(`all`),children:i(`auth_files.view_mode_all`)})",
+			new: "(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`${sb.viewModeButton} ${g===`all`?sb.viewModeButtonActive:``}`,onClick:()=>d(`all`),children:i(`auth_files.view_mode_all`)})",
 		},
 	}
 
@@ -167,7 +209,33 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-selection{color:var(--text-secondary);font-size:13px;font-weight:700}
 .codex-card-admin-bulk-actions{align-items:center;justify-content:flex-end;gap:8px;display:flex;flex:0 0 auto;flex-wrap:wrap}
 .codex-card-admin-bulk-actions .codex-card-admin-button{min-height:36px;padding:8px 12px;font-size:13px}
+.AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:minmax(220px,380px) minmax(86px,132px) minmax(132px,210px) minmax(144px,168px)!important;justify-content:start}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o{width:100%;max-width:100%}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(1){max-width:380px}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(2){max-width:132px}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(3){max-width:210px}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(4){max-width:168px}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__pageSizeSelect___yEBvp{width:100%;min-width:0}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__sortSelect___4fEjm{width:100%;min-width:0}
+.auth-files-display-options-menu{position:relative;width:100%;max-width:168px}
+.auth-files-display-options-trigger{box-sizing:border-box;user-select:none;cursor:pointer;list-style:none!important;-webkit-appearance:none;appearance:none;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);border-radius:9px;align-items:center;justify-content:space-between;gap:8px;width:100%;height:40px;padding:0 12px;font-size:13px;font-weight:700;line-height:40px;display:flex}
+.auth-files-display-options-trigger::-webkit-details-marker{display:none!important}
+.auth-files-display-options-trigger::marker{content:"";font-size:0}
+.auth-files-display-options-menu[open] .auth-files-display-options-trigger{border-color:var(--primary-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-color) 16%,transparent)}
+.auth-files-display-options-count{background:color-mix(in srgb,var(--primary-color) 18%,transparent);color:var(--primary-color);border-radius:999px;min-width:20px;height:20px;place-items:center;padding:0 6px;font-size:11px;font-weight:800;line-height:1;display:inline-grid}
+.auth-files-display-options-chevron{display:inline-flex;flex:none;align-items:center;justify-content:center;width:12px;height:12px;background:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22M3 4.75 6 7.75 9 4.75%22 stroke=%22%238b8680%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E') center/12px 12px no-repeat;font-size:0;line-height:0;transition:transform .15s;transform-origin:center}
+.auth-files-display-options-menu[open] .auth-files-display-options-chevron{transform:rotate(180deg)}
+.auth-files-display-options-list{z-index:40;position:absolute;top:calc(100% + 8px);left:0;right:auto;box-sizing:border-box;width:max-content;min-width:248px;border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:12px;padding:6px;box-shadow:0 16px 38px color-mix(in srgb,#000 20%,transparent);display:grid!important;gap:3px!important;min-height:0!important}
+.auth-files-display-options-list .AuthFilesPage-module__filterToggleCard___N4oxi{border:0;background:transparent;border-radius:8px;padding:0;min-height:0}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"]{box-sizing:border-box;align-items:center;gap:10px;width:100%;min-height:34px;border-radius:8px;padding:8px 10px;display:flex}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"]:hover{background:color-mix(in srgb,var(--text-primary) 8%,transparent)}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"] input{appearance:none!important;opacity:1!important;position:static!important;box-sizing:border-box;flex:none;width:16px!important;height:16px!important;margin:0;border:1px solid var(--border-color);background:var(--bg-primary);border-radius:4px;display:grid;place-content:center}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"] input:checked{background:var(--primary-color);border-color:var(--primary-color)}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"] input:checked:after{content:"";width:8px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"] [class*="ToggleSwitch-module__track"]{display:none!important}
+.auth-files-display-options-list label[class*="ToggleSwitch-module__root"] [class*="ToggleSwitch-module__label"]{color:var(--text-primary);font-size:13px;font-weight:700;line-height:1.35}
 @media (max-width:900px){.codex-card-admin-grid,.codex-card-admin-stats{grid-template-columns:1fr}.codex-card-admin-row,.codex-card-admin-list-head{align-items:stretch;flex-direction:column}.codex-card-admin-bulkbar{align-items:stretch;flex-direction:column}.codex-card-admin-search{min-width:0;flex:auto}.codex-card-admin-bulk-actions{align-items:stretch;flex-direction:column}.codex-card-admin-bulk-actions .codex-card-admin-button{width:100%}}
+@media (max-width:768px){.AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:1fr!important}.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o,.auth-files-display-options-menu{max-width:none}.auth-files-display-options-list{left:0;right:auto;width:min(280px,calc(100vw - 48px));min-width:0}}
 ` + "`" + `;
     document.head.appendChild(style);
   }
@@ -738,6 +806,230 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     });
   } else {
     setTimeout(boot, 100);
+  }
+})();
+`
+
+const authFileCodexStatsScript = `
+(function () {
+  "use strict";
+
+  var AUTH_FILES_HASH = "#/auth-files";
+  var AUTH_KEY = "cli-proxy-auth";
+  var SECURE_PREFIX = "enc::v1::";
+  var SECURE_NAMESPACE = "cli-proxy-api-webui::secure-storage";
+  var STYLE_ID = "auth-file-codex-stats-style";
+  var PANEL_ID = "auth-file-codex-stats-panel";
+  var observerStarted = false;
+  var lastFetchAt = 0;
+  var fetching = false;
+
+  function ensureStatsStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    var style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = [
+      ".auth-file-codex-stats-panel{box-sizing:border-box;width:100%;min-height:76px;margin:0 0 12px;border:1px solid var(--border-color);background:color-mix(in srgb,var(--bg-secondary) 82%,transparent);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:1;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 5%,transparent)}",
+      ".auth-file-codex-stats-title{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap;margin-right:2px}",
+      ".auth-file-codex-stat{min-width:96px;border:1px solid color-mix(in srgb,var(--border-color) 86%,transparent);background:color-mix(in srgb,var(--bg-primary) 72%,transparent);border-radius:10px;padding:9px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}",
+      ".auth-file-codex-stat-label{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap}",
+      ".auth-file-codex-stat-value{color:var(--text-primary);font-size:20px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}",
+      ".auth-file-codex-stat.normal .auth-file-codex-stat-value,.auth-file-codex-stat.unextracted .auth-file-codex-stat-value{color:var(--success-color)}",
+      ".auth-file-codex-stat.banned .auth-file-codex-stat-value{color:var(--error-color)}",
+      ".auth-file-codex-stat.extracted .auth-file-codex-stat-value{color:var(--primary-color)}",
+      "@media (max-width:1100px){.auth-file-codex-stats-panel{min-height:0}.auth-file-codex-stat{flex:1 1 132px}}"
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function decodeSecure(raw) {
+    if (!raw || !raw.startsWith(SECURE_PREFIX)) return raw;
+    try {
+      var seed = SECURE_NAMESPACE + "|" + window.location.host + "|" + navigator.userAgent;
+      var key = new TextEncoder().encode(seed);
+      var bin = atob(raw.slice(SECURE_PREFIX.length));
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i) ^ key[i % key.length];
+      return new TextDecoder().decode(bytes);
+    } catch (err) {
+      return "";
+    }
+  }
+
+  function authState() {
+    var raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return {};
+    try {
+      var decoded = decodeSecure(raw);
+      var parsed = JSON.parse(decoded);
+      return parsed && parsed.state ? parsed.state : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function apiBase() {
+    var state = authState();
+    return (state.apiBase || window.location.origin).replace(/\/+$/, "");
+  }
+
+  function managementKey() {
+    return authState().managementKey || "";
+  }
+
+  async function apiFetch(path) {
+    var key = managementKey();
+    if (!key) throw new Error("missing management key");
+    var headers = {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + key,
+      "X-Management-Key": key
+    };
+    var resp = await fetch(apiBase() + "/v0/management" + path, {headers: headers, cache: "no-store"});
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return resp.json();
+  }
+
+  function escapeHTML(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function numberValue(value) {
+    var n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  }
+
+  function isCodexFile(file) {
+    var provider = String(file && (file.type || file.provider) || "").trim().toLowerCase();
+    return provider === "codex";
+  }
+
+  function isBannedFile(file) {
+    var status = String(file && (file.account_status || file.accountStatus || file.status) || "").trim().toLowerCase();
+    return status === "banned";
+  }
+
+  function isExtractedFile(file) {
+    return !!(file && (file.codex_redeemed || file.codex_extracted || file.redeemed));
+  }
+
+  function statsFromFiles(files) {
+    var stats = {total: 0, normal: 0, banned: 0, unextracted: 0, extracted: 0};
+    (Array.isArray(files) ? files : []).forEach(function (file) {
+      if (!isCodexFile(file)) return;
+      stats.total += 1;
+      if (isBannedFile(file)) {
+        stats.banned += 1;
+        return;
+      }
+      stats.normal += 1;
+      if (isExtractedFile(file)) stats.extracted += 1;
+      else stats.unextracted += 1;
+    });
+    return stats;
+  }
+
+  function normalizeStats(data) {
+    var raw = data && (data.codex_auth_stats || data.codexAuthStats);
+    if (!raw) return statsFromFiles(data && data.files);
+    return {
+      total: numberValue(raw.total),
+      normal: numberValue(raw.normal),
+      banned: numberValue(raw.banned),
+      unextracted: numberValue(raw.unextracted || raw.unredeemed),
+      extracted: numberValue(raw.extracted || raw.redeemed)
+    };
+  }
+
+  function findFilterControls() {
+    return Array.from(document.querySelectorAll("div")).find(function (node) {
+      var cls = String(node.className || "");
+      var text = node.innerText || "";
+      return cls.indexOf("filterControls___") >= 0 && text.indexOf("搜索配置文件") >= 0 && text.indexOf("显示选项") >= 0;
+    }) || null;
+  }
+
+  function renderPanel(panel, stats, loading) {
+    var items = [
+      ["账号总数", stats.total, "total", ""],
+      ["正常", stats.normal, "normal", ""],
+      ["封禁", stats.banned, "banned", ""],
+      ["未提取", stats.unextracted, "unextracted", "未提取=账号状态为正常且尚未分配给用户"],
+      ["已提取", stats.extracted, "extracted", "已提取=账号状态为正常且已分配给用户"]
+    ];
+    panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计' + (loading ? ' · 更新中' : '') + '</div>' + items.map(function (item) {
+      return '<div class="auth-file-codex-stat ' + item[2] + '"' + (item[3] ? ' title="' + escapeHTML(item[3]) + '"' : '') + '><span class="auth-file-codex-stat-label">' + escapeHTML(item[0]) + '</span><span class="auth-file-codex-stat-value">' + escapeHTML(item[1]) + '</span></div>';
+    }).join("");
+  }
+
+  function ensurePanel() {
+    ensureStatsStyles();
+    if (window.location.hash !== AUTH_FILES_HASH) {
+      var existing = document.getElementById(PANEL_ID);
+      if (existing) existing.remove();
+      return null;
+    }
+    var controls = findFilterControls();
+    if (!controls) return null;
+    var panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = PANEL_ID;
+      panel.className = "auth-file-codex-stats-panel";
+      panel.style.gridColumn = "1 / -1";
+      renderPanel(panel, {total: 0, normal: 0, banned: 0, unextracted: 0, extracted: 0}, true);
+      var parent = controls.parentElement;
+      if (parent && parent !== controls) {
+        parent.insertBefore(panel, controls);
+      } else {
+        controls.insertBefore(panel, controls.firstChild);
+      }
+    }
+    return panel;
+  }
+
+  async function refreshStats(force) {
+    var panel = ensurePanel();
+    if (!panel || fetching) return;
+    var now = Date.now();
+    if (!force && now - lastFetchAt < 4000) return;
+    fetching = true;
+    lastFetchAt = now;
+    try {
+      var data = await apiFetch("/auth-files?is_webui=1");
+      renderPanel(panel, normalizeStats(data), false);
+    } catch (err) {
+      panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计</div><div class="auth-file-codex-stat banned"><span class="auth-file-codex-stat-label">统计加载失败</span><span class="auth-file-codex-stat-value">!</span></div>';
+    } finally {
+      fetching = false;
+    }
+  }
+
+  function bootAuthFileStats() {
+    ensurePanel();
+    refreshStats(false);
+    if (observerStarted) return;
+    observerStarted = true;
+    var observer = new MutationObserver(function () {
+      ensurePanel();
+      refreshStats(false);
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
+    window.addEventListener("hashchange", function () {
+      setTimeout(function () { refreshStats(true); }, 100);
+    });
+    window.addEventListener("focus", function () { refreshStats(false); });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(bootAuthFileStats, 120); });
+  } else {
+    setTimeout(bootAuthFileStats, 120);
   }
 })();
 `

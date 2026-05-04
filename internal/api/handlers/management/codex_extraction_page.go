@@ -69,11 +69,11 @@ const codexExtractionPageHTML = `<!doctype html>
     .pill { border: 1px solid var(--border); background: rgba(31,29,26,.70); border-radius: 999px; padding: 9px 14px 9px 12px; color: var(--text-secondary); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; backdrop-filter: blur(6px); }
     .dot { width: 9px; height: 9px; background: var(--success); border-radius: 50%; box-shadow: 0 0 0 5px rgba(16,185,129,.12); animation: pulse 2.4s ease-in-out infinite; }
     @keyframes pulse { 0%,100% { box-shadow: 0 0 0 5px rgba(16,185,129,.12); } 50% { box-shadow: 0 0 0 8px rgba(16,185,129,.04); } }
-    .center { display: grid; place-items: center; padding: 16px clamp(18px, 5vw, 72px) 56px; }
+    .center { display: grid; place-items: center; padding: 8px clamp(18px, 5vw, 72px) 48px; }
     .panel { width: min(100%, 960px); border: 1px solid var(--border); background: rgba(20,19,17,.82); border-radius: 24px; box-shadow: 0 34px 120px rgba(0,0,0,.42); overflow: hidden; position: relative; backdrop-filter: blur(8px); }
     .panel::before { content: "EXTRACT"; position: absolute; right: 34px; top: 38px; color: rgba(255,255,255,.035); font-size: clamp(54px, 12vw, 132px); line-height: .8; font-weight: 950; letter-spacing: -.09em; pointer-events: none; }
     .panel::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); }
-    .hero { padding: clamp(34px, 6vw, 60px) clamp(26px, 6vw, 64px) 28px; position: relative; }
+    .hero { padding: clamp(28px, 5.5vw, 54px) clamp(26px, 6vw, 64px) 24px; position: relative; }
     .kicker { color: var(--text-tertiary); font-size: 12px; font-weight: 800; margin-bottom: 14px; letter-spacing: .22em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 10px; }
     .kicker::before { content: ""; width: 22px; height: 1px; background: linear-gradient(90deg, var(--accent-b), transparent); }
     h1 { margin: 0; max-width: 680px; color: var(--text-primary); font-size: clamp(38px, 7vw, 72px); line-height: .98; letter-spacing: -.06em; font-weight: 950; }
@@ -82,15 +82,15 @@ const codexExtractionPageHTML = `<!doctype html>
     .meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
     .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--border); background: rgba(14,13,12,.6); border-radius: 999px; color: var(--text-tertiary); font-size: 12px; font-weight: 600; }
     .chip svg { width: 13px; height: 13px; opacity: .8; }
-    .form { border-top: 1px solid var(--border); background: rgba(31,29,26,.64); padding: clamp(26px, 5vw, 42px) clamp(26px, 6vw, 64px) clamp(32px, 5vw, 48px); }
+    .form { border-top: 1px solid var(--border); background: rgba(31,29,26,.64); padding: clamp(22px, 4.5vw, 38px) clamp(26px, 6vw, 64px) clamp(28px, 4.5vw, 44px); }
     .label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
     label { color: var(--text-secondary); display: block; font-size: 14px; font-weight: 800; }
     .hint { color: var(--text-tertiary); font-size: 12px; }
-    .input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
-    textarea { width: 100%; min-height: 140px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 16px 18px; font: inherit; font-size: 15px; line-height: 1.6; resize: vertical; transition: border-color .16s, box-shadow .16s, background .16s; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .01em; }
+    .input-row { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+    textarea { width: 100%; min-height: 112px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 14px 18px; font: inherit; font-size: 15px; line-height: 1.55; resize: vertical; transition: border-color .16s, box-shadow .16s, background .16s; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .01em; }
     textarea::placeholder { color: rgba(185,178,170,.5); font-family: inherit; }
     textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(139,134,128,.16); background: rgba(14,13,12,.96); }
-    button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 26px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; display: inline-flex; align-items: center; gap: 8px; letter-spacing: .01em; }
+    button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 26px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; display: inline-flex; align-items: center; gap: 8px; letter-spacing: .01em; align-self: center; }
     button svg { width: 16px; height: 16px; }
     button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 32px rgba(245,242,238,.12); }
     button:disabled { opacity: .58; cursor: wait; }
@@ -140,7 +140,7 @@ const codexExtractionPageHTML = `<!doctype html>
             <label for="cardCode">卡密</label>
           </div>
           <div class="input-row">
-            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="4" placeholder="https://email-verification-worker.1330257897.workers.dev/token-code?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="3" placeholder="https://email-verification-worker.1330257897.workers.dev/token-code?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
             <button id="extractButton" type="button">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
               <span>提取</span>

@@ -16,4 +16,6 @@ const (
 	StatusError Status = "error"
 	// StatusDisabled marks the auth as intentionally disabled.
 	StatusDisabled Status = "disabled"
+	// StatusBanned marks the auth as permanently rejected by the upstream account system.
+	StatusBanned Status = "banned"
 )
