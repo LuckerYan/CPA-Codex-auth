@@ -84,11 +84,14 @@ func TestPatchSelectDropdownAlwaysDown(t *testing.T) {
 	assertNotContains(t, patched, "c=o>=zs||o>=s?`down`:`up`")
 }
 
-func TestCodexCardManagementPanelExtractsKeyFromTokenCodeLinks(t *testing.T) {
+func TestCodexCardManagementPanelExtractsKeyFromKeycodeLinks(t *testing.T) {
 	script := []byte(codexCardManagementPanelScript)
 
-	assertContains(t, script, "一行一个卡密或 token-code 链接")
+	assertContains(t, script, "一行一个卡密或邮箱---keycode 链接")
+	assertContains(t, script, "mail.lucker.cc.cd/keycode?email")
 	assertContains(t, script, "function extractCardCodeInput")
+	assertContains(t, script, "function cardCodeInputCandidates")
+	assertContains(t, script, "trimmed.indexOf(\"---\")")
 	assertContains(t, script, "searchParams.get(\"key\")")
 	assertContains(t, script, "function extractCardCodeInputs")
 	assertContains(t, script, "JSON.stringify({items: codes})")

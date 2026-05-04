@@ -128,7 +128,7 @@ const codexExtractionPageHTML = `<!doctype html>
         <div class="hero">
           <div class="kicker">Codex Auth File</div>
           <h1>输入卡密，<span class="hl">一键提取</span></h1>
-          <p class="desc">系统自动分配可用账号、验活通过后打包为 ZIP 下载。</p>
+          <p class="desc">支持粘贴卡密或邮箱---keycode 链接，系统验活通过后打包为 ZIP 下载。</p>
           <div class="meta-row">
             <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>验活后下发</span>
             <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>ZIP 打包</span>
@@ -137,17 +137,17 @@ const codexExtractionPageHTML = `<!doctype html>
         </div>
         <div class="form">
           <div class="label-row">
-            <label for="cardCode">卡密</label>
+            <label for="cardCode">卡密 / 提取链接</label>
           </div>
           <div class="input-row">
-            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="3" placeholder="https://email-verification-worker.1330257897.workers.dev/token-code?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+            <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="3" placeholder="user@example.com---https://mail.lucker.cc.cd/keycode?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
             <button id="extractButton" type="button">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
               <span>提取</span>
             </button>
           </div>
           <div id="status" class="status">就绪</div>
-          <div class="note">每张卡密对应一个 JSON 文件；可直接粘贴 token-code 链接，系统会自动读取 key 参数。批量提交将合并为同一 ZIP，账号异常会自动切换。</div>
+          <div class="note">每行输入一张卡密或一个邮箱---keycode 链接；系统会自动读取链接中的 key 参数。批量提交将合并为同一 ZIP，账号异常会自动切换。</div>
         </div>
       </section>
     </main>
@@ -194,12 +194,32 @@ const codexExtractionPageHTML = `<!doctype html>
     function extractCardCodeInput(value) {
       var trimmed = String(value || '').trim();
       if (!trimmed) return '';
+      var candidates = cardCodeInputCandidates(trimmed);
+      for (var i = 0; i < candidates.length; i++) {
+        var candidate = candidates[i];
+        var key = extractCardCodeKeyParam(candidate);
+        if (key) return key;
+      }
+      return trimmed;
+    }
+
+    function cardCodeInputCandidates(trimmed) {
+      var candidates = [trimmed];
+      var markerIndex = trimmed.indexOf('---');
+      if (markerIndex >= 0) {
+        var suffix = trimmed.slice(markerIndex + 3).trim();
+        if (suffix && suffix !== trimmed) candidates.unshift(suffix);
+      }
+      return candidates;
+    }
+
+    function extractCardCodeKeyParam(value) {
       try {
-        var parsed = new URL(trimmed, window.location.origin);
+        var parsed = new URL(value, window.location.origin);
         var key = parsed.searchParams.get('key');
         if (key && key.trim()) return key.trim();
       } catch (errParse) {}
-      var match = trimmed.match(/(?:^|[?&#])key=([^&#\s]+)/i);
+      var match = String(value || '').match(/(?:^|[?&#])key=([^&#\s]+)/i);
       if (match && match[1]) {
         try {
           return decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
@@ -207,7 +227,7 @@ const codexExtractionPageHTML = `<!doctype html>
           return match[1].trim();
         }
       }
-      return trimmed;
+      return '';
     }
 
     function getCardCodes() {
@@ -222,7 +242,7 @@ const codexExtractionPageHTML = `<!doctype html>
     async function extract() {
       var codes = getCardCodes();
       if (codes.length === 0) {
-        setStatus('请先输入卡密', 'error');
+        setStatus('请先输入卡密或提取链接', 'error');
         input.focus();
         return;
       }

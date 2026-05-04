@@ -437,6 +437,17 @@ func TestNormalizeCodexCardCodeValidatedExtractsURLKey(t *testing.T) {
 	}
 }
 
+func TestNormalizeCodexCardCodeValidatedExtractsDashDelimitedKeycodeURL(t *testing.T) {
+	raw := "0buktk8sl6@thinktank.edu.kg---https://mail.lucker.cc.cd/keycode?email=0buktk8sl6@thinktank.edu.kg&key=et_1QcTaQFX3QFXxTGVzS5ztQ"
+	got, ok := normalizeCodexCardCodeValidated(raw)
+	if !ok {
+		t.Fatalf("expected dash-delimited keycode URL to be valid")
+	}
+	if want := "et_1QcTaQFX3QFXxTGVzS5ztQ"; got != want {
+		t.Fatalf("unexpected dash-delimited keycode extraction: got %q want %q", got, want)
+	}
+}
+
 func TestNormalizeCodexCardCodeValidatedPreservesWorkerKeyCase(t *testing.T) {
 	got, ok := normalizeCodexCardCodeValidated("et_GHihiHG0SSKIx1q4UCpfAA")
 	if !ok {
@@ -471,7 +482,7 @@ func TestCodexCardStoreImportExtractsURLKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get card store: %v", err)
 	}
-	raw := "https://email-verification-worker.1330257897.workers.dev/token-code?email=rzdsqn00pt@lucker-yan.asia&key=et_GHihiHG0SSKIx1q4UCpfAA"
+	raw := "0buktk8sl6@thinktank.edu.kg---https://mail.lucker.cc.cd/keycode?email=0buktk8sl6@thinktank.edu.kg&key=et_GHihiHG0SSKIx1q4UCpfAA"
 	added, duplicates, invalid, errImport := store.importCodes([]string{raw})
 	if errImport != nil {
 		t.Fatalf("import cards: %v", errImport)

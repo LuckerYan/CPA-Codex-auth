@@ -593,15 +593,30 @@ func extractCodexCardCodeInput(raw string) (string, bool) {
 	if trimmed == "" {
 		return "", false
 	}
-	if parsed, err := url.Parse(trimmed); err == nil && parsed != nil {
-		if key := strings.TrimSpace(parsed.Query().Get("key")); key != "" {
+	for _, candidate := range codexCardCodeInputCandidates(trimmed) {
+		if parsed, err := url.Parse(candidate); err == nil && parsed != nil {
+			if key := strings.TrimSpace(parsed.Query().Get("key")); key != "" {
+				return key, true
+			}
+		}
+		if key := extractCodexCardKeyParamFallback(candidate); key != "" {
 			return key, true
 		}
 	}
-	if key := extractCodexCardKeyParamFallback(trimmed); key != "" {
-		return key, true
-	}
 	return trimmed, false
+}
+
+func codexCardCodeInputCandidates(trimmed string) []string {
+	candidates := []string{trimmed}
+	markerIndex := strings.Index(trimmed, "---")
+	if markerIndex < 0 {
+		return candidates
+	}
+	suffix := strings.TrimSpace(trimmed[markerIndex+3:])
+	if suffix == "" || suffix == trimmed {
+		return candidates
+	}
+	return append([]string{suffix}, candidates...)
 }
 
 func extractCodexCardKeyParamFallback(raw string) string {
