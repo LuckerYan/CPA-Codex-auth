@@ -129,8 +129,23 @@ func TestUploadAuthFile_BatchMultipart_InvalidJSONDoesNotOverwriteExistingFile(t
 
 	h.UploadAuthFile(ctx)
 
-	if rec.Code != http.StatusMultiStatus {
-		t.Fatalf("expected upload status %d, got %d with body %s", http.StatusMultiStatus, rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected upload status %d, got %d with body %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got, _ := payload["status"].(string); got != "partial" {
+		t.Fatalf("expected partial status, got %#v", payload)
+	}
+	if got, ok := payload["uploaded"].(float64); !ok || int(got) != 1 {
+		t.Fatalf("expected uploaded=1, got %#v", payload["uploaded"])
+	}
+	dups, _ := payload["duplicates"].([]any)
+	if len(dups) != 1 {
+		t.Fatalf("expected 1 duplicate entry, got %#v", payload["duplicates"])
 	}
 
 	data, err := os.ReadFile(filepath.Join(authDir, existingName))
@@ -147,6 +162,198 @@ func TestUploadAuthFile_BatchMultipart_InvalidJSONDoesNotOverwriteExistingFile(t
 	}
 	if string(betaData) != files[1].content {
 		t.Fatalf("expected beta auth file content %q, got %q", files[1].content, string(betaData))
+	}
+}
+
+func TestUploadAuthFile_DuplicateCodexContentIsSkipped(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+	gin.SetMode(gin.TestMode)
+
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+
+	seedName := "codex-original.json"
+	duplicateName := "codex-copy.json"
+	content := `{"type":"codex","email":"same@example.com","account_id":"acct-same","refresh_token":"rt-same","id_token":"id-same"}`
+	if err := os.WriteFile(filepath.Join(authDir, seedName), []byte(content), 0o600); err != nil {
+		t.Fatalf("failed to seed existing auth file: %v", err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", duplicateName)
+	if err != nil {
+		t.Fatalf("failed to create multipart file: %v", err)
+	}
+	if _, err = part.Write([]byte(content)); err != nil {
+		t.Fatalf("failed to write multipart content: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx.Request = req
+
+	h.UploadAuthFile(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected upload status %d, got %d with body %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got, _ := payload["status"].(string); got != "duplicate" {
+		t.Fatalf("expected duplicate status, got %#v", payload)
+	}
+	if _, err := os.Stat(filepath.Join(authDir, duplicateName)); !os.IsNotExist(err) {
+		t.Fatalf("expected duplicate upload to be skipped, stat err: %v", err)
+	}
+}
+
+func TestUploadAuthFile_ExistingFileNameIsSkippedEvenWithDifferentContent(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+	gin.SetMode(gin.TestMode)
+
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+
+	existingName := "codex-existing.json"
+	existingContent := `{"type":"codex","email":"same@example.com","account_id":"acct-old","refresh_token":"rt-old","id_token":"id-old"}`
+	if err := os.WriteFile(filepath.Join(authDir, existingName), []byte(existingContent), 0o600); err != nil {
+		t.Fatalf("failed to seed existing auth file: %v", err)
+	}
+
+	uploadContent := `{"type":"codex","email":"same@example.com","account_id":"acct-new","refresh_token":"rt-new","id_token":"id-new"}`
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", existingName)
+	if err != nil {
+		t.Fatalf("failed to create multipart file: %v", err)
+	}
+	if _, err = part.Write([]byte(uploadContent)); err != nil {
+		t.Fatalf("failed to write multipart content: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx.Request = req
+
+	h.UploadAuthFile(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected upload status %d, got %d with body %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got, _ := payload["status"].(string); got != "duplicate" {
+		t.Fatalf("expected duplicate status, got %#v", payload)
+	}
+	if got, _ := payload["uploaded"].(float64); int(got) != 0 {
+		t.Fatalf("expected uploaded=0, got %#v", payload["uploaded"])
+	}
+	dups, _ := payload["duplicates"].([]any)
+	if len(dups) != 1 {
+		t.Fatalf("expected 1 duplicate entry, got %#v", payload["duplicates"])
+	}
+	if _, err := os.ReadFile(filepath.Join(authDir, existingName)); err != nil {
+		t.Fatalf("expected existing auth file to remain readable: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(authDir, existingName))
+	if err != nil {
+		t.Fatalf("expected existing auth file to remain readable: %v", err)
+	}
+	if string(data) != existingContent {
+		t.Fatalf("expected existing auth file to remain %q, got %q", existingContent, string(data))
+	}
+}
+
+func TestUploadAuthFile_BatchMultipart_CountsExistingFileNamesAsDuplicates(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+	gin.SetMode(gin.TestMode)
+
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+
+	existingName := "alpha.json"
+	existingContent := `{"type":"codex","email":"alpha@example.com","account_id":"acct-alpha","refresh_token":"rt-alpha","id_token":"id-alpha"}`
+	if err := os.WriteFile(filepath.Join(authDir, existingName), []byte(existingContent), 0o600); err != nil {
+		t.Fatalf("failed to seed existing auth file: %v", err)
+	}
+
+	files := []struct {
+		name    string
+		content string
+	}{
+		{name: existingName, content: `{"type":"codex","email":"alpha@example.com","account_id":"acct-new","refresh_token":"rt-new","id_token":"id-new"}`},
+		{name: "beta.json", content: `{"type":"claude","email":"beta@example.com"}`},
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, file := range files {
+		part, err := writer.CreateFormFile("file", file.name)
+		if err != nil {
+			t.Fatalf("failed to create multipart file: %v", err)
+		}
+		if _, err = part.Write([]byte(file.content)); err != nil {
+			t.Fatalf("failed to write multipart content: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/auth-files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx.Request = req
+
+	h.UploadAuthFile(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected upload status %d, got %d with body %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got, _ := payload["status"].(string); got != "partial" {
+		t.Fatalf("expected partial status, got %#v", payload)
+	}
+	if got, ok := payload["uploaded"].(float64); !ok || int(got) != 1 {
+		t.Fatalf("expected uploaded=1, got %#v", payload["uploaded"])
+	}
+	dups, _ := payload["duplicates"].([]any)
+	if len(dups) != 1 {
+		t.Fatalf("expected 1 duplicate entry, got %#v", payload["duplicates"])
+	}
+	filesOut, _ := payload["files"].([]any)
+	if len(filesOut) != 1 || filesOut[0].(string) != "beta.json" {
+		t.Fatalf("expected beta.json to be the only uploaded file, got %#v", payload["files"])
+	}
+	if data, err := os.ReadFile(filepath.Join(authDir, existingName)); err != nil {
+		t.Fatalf("expected existing auth file to remain readable: %v", err)
+	} else if string(data) != existingContent {
+		t.Fatalf("expected existing auth file to remain %q, got %q", existingContent, string(data))
 	}
 }
 

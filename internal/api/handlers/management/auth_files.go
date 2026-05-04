@@ -62,6 +62,17 @@ var (
 	errAuthFileNotFound   = errors.New("auth file not found")
 )
 
+type authFileDuplicateError struct {
+	Name string
+}
+
+func (e *authFileDuplicateError) Error() string {
+	if e == nil || strings.TrimSpace(e.Name) == "" {
+		return "auth file already exists"
+	}
+	return fmt.Sprintf("auth file already exists: %s", e.Name)
+}
+
 func extractLastRefreshTimestamp(meta map[string]any) (time.Time, bool) {
 	if len(meta) == 0 {
 		return time.Time{}, false
@@ -721,6 +732,14 @@ func (h *Handler) UploadAuthFile(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "file must be .json"})
 				return
 			}
+			if duplicate, ok := authFileDuplicateFromError(errUpload); ok {
+				c.JSON(http.StatusOK, gin.H{
+					"status":     "duplicate",
+					"uploaded":   0,
+					"duplicates": []gin.H{{"name": duplicate.Name}},
+				})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": errUpload.Error()})
 			return
 		}
@@ -729,6 +748,7 @@ func (h *Handler) UploadAuthFile(c *gin.Context) {
 	}
 	if len(fileHeaders) > 1 {
 		uploaded := make([]string, 0, len(fileHeaders))
+		duplicates := make([]gin.H, 0)
 		failed := make([]gin.H, 0)
 		for _, file := range fileHeaders {
 			name, errUpload := h.storeUploadedAuthFile(ctx, file)
@@ -741,6 +761,10 @@ func (h *Handler) UploadAuthFile(c *gin.Context) {
 				if errors.Is(errUpload, errAuthFileMustBeJSON) {
 					msg = "file must be .json"
 				}
+				if duplicate, ok := authFileDuplicateFromError(errUpload); ok {
+					duplicates = append(duplicates, gin.H{"name": duplicate.Name})
+					continue
+				}
 				failed = append(failed, gin.H{"name": failureName, "error": msg})
 				continue
 			}
@@ -748,14 +772,22 @@ func (h *Handler) UploadAuthFile(c *gin.Context) {
 		}
 		if len(failed) > 0 {
 			c.JSON(http.StatusMultiStatus, gin.H{
-				"status":   "partial",
-				"uploaded": len(uploaded),
-				"files":    uploaded,
-				"failed":   failed,
+				"status":     "partial",
+				"uploaded":   len(uploaded),
+				"files":      uploaded,
+				"duplicates": duplicates,
+				"failed":     failed,
 			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "uploaded": len(uploaded), "files": uploaded})
+		status := "ok"
+		if len(duplicates) > 0 {
+			status = "partial"
+			if len(uploaded) == 0 {
+				status = "duplicate"
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"status": status, "uploaded": len(uploaded), "files": uploaded, "duplicates": duplicates})
 		return
 	}
 	if c.ContentType() == "multipart/form-data" {
@@ -777,6 +809,14 @@ func (h *Handler) UploadAuthFile(c *gin.Context) {
 		return
 	}
 	if err = h.writeAuthFile(ctx, filepath.Base(name), data); err != nil {
+		if duplicate, ok := authFileDuplicateFromError(err); ok {
+			c.JSON(http.StatusOK, gin.H{
+				"status":     "duplicate",
+				"uploaded":   0,
+				"duplicates": []gin.H{{"name": duplicate.Name}},
+			})
+			return
+		}
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -920,9 +960,17 @@ func (h *Handler) writeAuthFile(ctx context.Context, name string, data []byte) e
 			dst = abs
 		}
 	}
+	if _, errStat := os.Stat(dst); errStat == nil {
+		return &authFileDuplicateError{Name: filepath.Base(dst)}
+	} else if errStat != nil && !errors.Is(errStat, os.ErrNotExist) {
+		return fmt.Errorf("failed to stat file: %w", errStat)
+	}
 	auth, err := h.buildAuthFromFileData(dst, data)
 	if err != nil {
 		return err
+	}
+	if duplicateName, duplicate := h.findDuplicateAuthFile(dst, auth.Metadata); duplicate {
+		return &authFileDuplicateError{Name: duplicateName}
 	}
 	if errWrite := os.WriteFile(dst, data, 0o600); errWrite != nil {
 		return fmt.Errorf("failed to write file: %w", errWrite)
@@ -931,6 +979,88 @@ func (h *Handler) writeAuthFile(ctx context.Context, name string, data []byte) e
 		return err
 	}
 	return nil
+}
+
+func authFileDuplicateFromError(err error) (*authFileDuplicateError, bool) {
+	var duplicate *authFileDuplicateError
+	if errors.As(err, &duplicate) && duplicate != nil {
+		return duplicate, true
+	}
+	return nil, false
+}
+
+func (h *Handler) findDuplicateAuthFile(targetPath string, metadata map[string]any) (string, bool) {
+	if h == nil || h.cfg == nil || len(metadata) == 0 {
+		return "", false
+	}
+	targetDigest := authFileCanonicalDigest(metadata)
+	targetCodexKey := ""
+	if strings.EqualFold(strings.TrimSpace(codexAuthMetadataValue(metadata, "type")), "codex") {
+		targetCodexKey = codexAuthContentReservationKey(metadata)
+	}
+	if targetDigest == "" && targetCodexKey == "" {
+		return "", false
+	}
+	authDir := strings.TrimSpace(h.cfg.AuthDir)
+	if resolved, errResolve := util.ResolveAuthDir(authDir); errResolve == nil && strings.TrimSpace(resolved) != "" {
+		authDir = resolved
+	}
+	if strings.TrimSpace(authDir) == "" {
+		return "", false
+	}
+	entries, err := os.ReadDir(authDir)
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if entry == nil || entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+			continue
+		}
+		existingPath := cleanAuthFilePath(filepath.Join(authDir, entry.Name()))
+		data, errRead := os.ReadFile(existingPath)
+		if errRead != nil || len(bytes.TrimSpace(data)) == 0 {
+			continue
+		}
+		existingMetadata := make(map[string]any)
+		if errJSON := json.Unmarshal(data, &existingMetadata); errJSON != nil {
+			continue
+		}
+		if targetDigest != "" && targetDigest == authFileCanonicalDigest(existingMetadata) {
+			return entry.Name(), true
+		}
+		if targetCodexKey != "" && targetCodexKey == codexAuthContentReservationKey(existingMetadata) {
+			return entry.Name(), true
+		}
+	}
+	return "", false
+}
+
+func cleanAuthFilePath(path string) string {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" {
+		return ""
+	}
+	if !filepath.IsAbs(path) {
+		if abs, errAbs := filepath.Abs(path); errAbs == nil {
+			path = abs
+		}
+	}
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path
+}
+
+func authFileCanonicalDigest(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(metadata)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func requestedAuthFileNamesForDelete(c *gin.Context) ([]string, error) {
