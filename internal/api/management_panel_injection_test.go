@@ -94,8 +94,50 @@ func TestPatchAuthFilesDisplayOptionsDropdown(t *testing.T) {
 	assertContains(t, patched, "auth-files-display-options-menu")
 	assertContains(t, patched, "auth-files-display-options-trigger")
 	assertContains(t, patched, "auth-files-display-options-list")
-	assertContains(t, patched, "children:(l?1:0)+(d?1:0)+(p?1:0)")
+	assertContains(t, patched, "children:(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(p?1:0)")
+	assertContains(t, patched, "仅显示未提取凭证")
+	assertContains(t, patched, "仅显示已提取凭证")
+	assertContains(t, patched, "e&&setExtractedOnly(!1)")
+	assertContains(t, patched, "e&&setUnextractedOnly(!1)")
 	assertNotContains(t, patched, "className:G.filterToggleGroup,children:[")
+}
+
+func TestPatchAuthFilesExtractionFilters(t *testing.T) {
+	input := []byte(
+		"[s,c]=(0,y.useState)(`all`),[l,u]=(0,y.useState)(!1),[d,f]=(0,y.useState)(!1),[p,m]=(0,y.useState)(!1),[h,g]=(0,y.useState)(``)," +
+			"typeof t.problemOnly==`boolean`&&u(t.problemOnly),typeof t.disabledOnly==`boolean`&&f(t.disabledOnly),typeof e!=`boolean`&&typeof t.compactMode==`boolean`&&m(t.compactMode)," +
+			"zx({filter:s,problemOnly:l,disabledOnly:d,compactMode:p,search:h,page:_,pageSize:tt,regularPageSize:b.regular,compactPageSize:b.compact,sortMode:D}),Vx(p))},[p,d,s,_,tt,b,l,h,D,j])" +
+			"let st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Vv(e)||d&&e.disabled!==!0)),[d,I,l]),lt=",
+	)
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "[extractedOnly,setExtractedOnly]=(0,y.useState)(!1)")
+	assertContains(t, patched, "[unextractedOnly,setUnextractedOnly]=(0,y.useState)(!1)")
+	assertContains(t, patched, "typeof t.extractedOnly==`boolean`&&setExtractedOnly(t.extractedOnly)")
+	assertContains(t, patched, "extractedOnly:extractedOnly")
+	assertContains(t, patched, "unextractedOnly:unextractedOnly")
+	assertContains(t, patched, "codexExtractedFilterMatch")
+	assertContains(t, patched, "codexUnextractedFilterMatch")
+	assertContains(t, patched, "extractedOnly&&!codexExtractedFilterMatch(e)")
+	assertContains(t, patched, "unextractedOnly&&!codexUnextractedFilterMatch(e)")
+}
+
+func TestPatchAuthFilesCardQuotaRefreshButton(t *testing.T) {
+	input := []byte(
+		"function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=" +
+			"!y&&(0,B.jsxs)(`div`,{className:G.statusToggle,children:[(0,B.jsx)(`span`,{className:G.statusToggleLabel,children:t(`auth_files.status_toggle_label`)}),(0,B.jsx)(Sg,{ariaLabel:t(`auth_files.status_toggle_label`),checked:!n.disabled,disabled:o||c[n.name]===!0,onChange:e=>h(n,e)})]})",
+	)
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "codexQuotaForCard=np(e=>e.codexQuota[n.name])")
+	assertContains(t, patched, "setCodexQuotaForCard=np(e=>e.setCodexQuota)")
+	assertContains(t, patched, "refreshCodexQuotaForCard")
+	assertContains(t, patched, "Xb(`codex`)")
+	assertContains(t, patched, "auth-file-card-quota-refresh-button")
+	assertContains(t, patched, "title:`刷新额度`")
+	assertNotContains(t, patched, "children:`刷新`")
 }
 
 func TestPatchAuthFilesSortSelectChevron(t *testing.T) {
@@ -137,6 +179,7 @@ func TestCodexCardManagementPanelIncludesAuthFilesFilterStyles(t *testing.T) {
 
 	assertContains(t, script, ".auth-files-display-options-menu")
 	assertContains(t, script, ".auth-files-display-options-list")
+	assertContains(t, script, ".auth-file-card-quota-refresh-button")
 	assertContains(t, script, "ToggleSwitch-module__root")
 	assertContains(t, script, "grid-template-columns:minmax(220px,380px)")
 	assertContains(t, script, "left:0;right:auto")
@@ -163,6 +206,17 @@ func TestAuthFileCodexStatsRefreshesAfterQuotaUpdateEvent(t *testing.T) {
 
 	assertContains(t, script, "window.addEventListener(\"cli-proxy-auth-files-updated\"")
 	assertContains(t, script, "setTimeout(function () { refreshStats(true); }, 150);")
+}
+
+func TestAuthFilesDisplayOptionsDropdownClosesOnOutsideClick(t *testing.T) {
+	script := []byte(authFileCodexStatsScript)
+
+	assertContains(t, script, "function closeDisplayOptionsMenus(event)")
+	assertContains(t, script, ".auth-files-display-options-menu[open]")
+	assertContains(t, script, "if (target && menu.contains(target)) return;")
+	assertContains(t, script, "menu.removeAttribute(\"open\")")
+	assertContains(t, script, "document.addEventListener(\"pointerdown\", closeDisplayOptionsMenus, true)")
+	assertContains(t, script, "event.key === \"Escape\"")
 }
 
 func assertContains(t *testing.T, data []byte, want string) {

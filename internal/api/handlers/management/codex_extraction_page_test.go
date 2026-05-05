@@ -25,7 +25,6 @@ func TestCodexExtractionPageSupportsBatchCodes(t *testing.T) {
 	assertCodexExtractionPageNotContains(t, "多个 Codex 认证 JSON 打包成 ZIP；每个账号保持独立文件。")
 	assertCodexExtractionPageNotContains(t, "生成单个 sub2api-account JSON；多个账号合并在 accounts 数组内，不压缩。")
 	assertCodexExtractionPageNotContains(t, "sub2api-account JSON")
-	assertCodexExtractionPageContains(t, "hero-sms.com/cn/services")
 	assertCodexExtractionPageContains(t, "function getSelectedFormat()")
 	assertCodexExtractionPageContains(t, "input[name=\"extractFormat\"]")
 	assertCodexExtractionPageContains(t, "JSON.stringify({ items: codes, format: format })")

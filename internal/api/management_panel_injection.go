@@ -113,6 +113,30 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			new: "Vv=e=>Bv(e).length>0||String(e.account_status??e.accountStatus??e.status??``).trim().toLowerCase()===`banned`",
 		},
 		{
+			old: "[s,c]=(0,y.useState)(`all`),[l,u]=(0,y.useState)(!1),[d,f]=(0,y.useState)(!1),[p,m]=(0,y.useState)(!1),[h,g]=(0,y.useState)(``),",
+			new: "[s,c]=(0,y.useState)(`all`),[l,u]=(0,y.useState)(!1),[d,f]=(0,y.useState)(!1),[extractedOnly,setExtractedOnly]=(0,y.useState)(!1),[unextractedOnly,setUnextractedOnly]=(0,y.useState)(!1),[p,m]=(0,y.useState)(!1),[h,g]=(0,y.useState)(``),",
+		},
+		{
+			old: "typeof t.problemOnly==`boolean`&&u(t.problemOnly),typeof t.disabledOnly==`boolean`&&f(t.disabledOnly),typeof e!=`boolean`&&typeof t.compactMode==`boolean`&&m(t.compactMode),",
+			new: "typeof t.problemOnly==`boolean`&&u(t.problemOnly),typeof t.disabledOnly==`boolean`&&f(t.disabledOnly),typeof t.extractedOnly==`boolean`&&setExtractedOnly(t.extractedOnly),typeof t.unextractedOnly==`boolean`&&setUnextractedOnly(t.unextractedOnly),typeof e!=`boolean`&&typeof t.compactMode==`boolean`&&m(t.compactMode),",
+		},
+		{
+			old: "zx({filter:s,problemOnly:l,disabledOnly:d,compactMode:p,search:h,page:_,pageSize:tt,regularPageSize:b.regular,compactPageSize:b.compact,sortMode:D}),Vx(p))},[p,d,s,_,tt,b,l,h,D,j])",
+			new: "zx({filter:s,problemOnly:l,disabledOnly:d,extractedOnly:extractedOnly,unextractedOnly:unextractedOnly,compactMode:p,search:h,page:_,pageSize:tt,regularPageSize:b.regular,compactPageSize:b.compact,sortMode:D}),Vx(p))},[p,d,s,_,tt,b,l,h,D,j,extractedOnly,unextractedOnly])",
+		},
+		{
+			old: "let st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Vv(e)||d&&e.disabled!==!0)),[d,I,l]),lt=",
+			new: "let codexExtractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!!(e?.codex_redeemed||e?.codex_extracted||e?.redeemed),codexUnextractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!codexExtractedFilterMatch(e)&&String(e?.account_status??e?.accountStatus??e?.status??``).trim().toLowerCase()!==`banned`,st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Vv(e)||d&&e.disabled!==!0||extractedOnly&&!codexExtractedFilterMatch(e)||unextractedOnly&&!codexUnextractedFilterMatch(e))),[d,I,l,extractedOnly,unextractedOnly]),lt=",
+		},
+		{
+			old: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=",
+			new: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,refreshQuotaNotify=hc(e=>e.showNotification),codexQuotaForCard=np(e=>e.codexQuota[n.name]),setCodexQuotaForCard=np(e=>e.setCodexQuota),refreshCodexQuotaForCard=async()=>{if(o||Kv(n)||n.disabled||codexQuotaForCard?.status===`loading`)return;let e=Xb(`codex`);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildLoadingState()}));try{let r=await e.fetchQuota(n,t);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildSuccessState(r)})),refreshQuotaNotify(t(`auth_files.quota_refresh_success`,{name:n.name}),`success`)}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);setCodexQuotaForCard(t=>({...t,[n.name]:Xb(`codex`).buildErrorState(r,i)})),refreshQuotaNotify(t(`auth_files.quota_refresh_failed`,{name:n.name,message:r}),`error`) }},_=",
+		},
+		{
+			old: "!y&&(0,B.jsxs)(`div`,{className:G.statusToggle,children:[(0,B.jsx)(`span`,{className:G.statusToggleLabel,children:t(`auth_files.status_toggle_label`)}),(0,B.jsx)(Sg,{ariaLabel:t(`auth_files.status_toggle_label`),checked:!n.disabled,disabled:o||c[n.name]===!0,onChange:e=>h(n,e)})]})",
+			new: "!y&&(0,B.jsxs)(`div`,{className:G.statusToggle,children:[String(n.type||n.provider||``).trim().toLowerCase()===`codex`&&(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`auth-file-card-quota-refresh-button`,onClick:()=>void refreshCodexQuotaForCard(),disabled:o||n.disabled||codexQuotaForCard?.status===`loading`,title:`刷新额度`,\"aria-label\":`刷新额度`,children:codexQuotaForCard?.status===`loading`?(0,B.jsx)(p_,{size:13}):(0,B.jsx)(cs,{size:13})}),(0,B.jsx)(`span`,{className:G.statusToggleLabel,children:t(`auth_files.status_toggle_label`)}),(0,B.jsx)(Sg,{ariaLabel:t(`auth_files.status_toggle_label`),checked:!n.disabled,disabled:o||c[n.name]===!0,onChange:e=>h(n,e)})]})",
+		},
+		{
 			old: "P=y?t(`auth_files.type_virtual`)||`虚拟认证文件`:n.disabled?t(`auth_files.health_status_disabled`):t(j?`auth_files.health_status_warning`:A?`auth_files.health_status_healthy`:`auth_files.status_toggle_label`),ee=y?G.stateBadgeVirtual:n.disabled?G.stateBadgeDisabled:j?G.stateBadgeWarning:G.stateBadgeActive;return",
 			new: "P=y?t(`auth_files.type_virtual`)||`虚拟认证文件`:n.disabled?t(`auth_files.health_status_disabled`):t(j?`auth_files.health_status_warning`:A?`auth_files.health_status_healthy`:`auth_files.status_toggle_label`),ee=y?G.stateBadgeVirtual:n.disabled?G.stateBadgeDisabled:j?G.stateBadgeWarning:G.stateBadgeActive,te=(n.type||``).toLowerCase()===`codex`,ne=String(n.account_status??n.accountStatus??n.status??``).trim().toLowerCase(),re=ne===`banned`,ie=re?`⛔ 封禁`:`✓ 正常`,ae=re?G.stateBadgeWarning:G.stateBadgeActive;return",
 		},
@@ -122,7 +146,7 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`div`,{className:G.filterToggleGroup,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})",
-			new: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`details`,{className:`auth-files-display-options-menu`,children:[(0,B.jsxs)(`summary`,{className:`auth-files-display-options-trigger`,children:[(0,B.jsx)(`span`,{children:e(`auth_files.display_options_label`)}),(l||d||p)&&(0,B.jsx)(`span`,{className:`auth-files-display-options-count`,children:(l?1:0)+(d?1:0)+(p?1:0)}),(0,B.jsx)(`span`,{className:`auth-files-display-options-chevron`,children:`⌄`})]}),(0,B.jsxs)(`div`,{className:`${G.filterToggleGroup} auth-files-display-options-list`,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})]})",
+			new: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`details`,{className:`auth-files-display-options-menu`,children:[(0,B.jsxs)(`summary`,{className:`auth-files-display-options-trigger`,children:[(0,B.jsx)(`span`,{children:e(`auth_files.display_options_label`)}),(l||d||extractedOnly||unextractedOnly||p)&&(0,B.jsx)(`span`,{className:`auth-files-display-options-count`,children:(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(p?1:0)}),(0,B.jsx)(`span`,{className:`auth-files-display-options-chevron`,children:`⌄`})]}),(0,B.jsxs)(`div`,{className:`${G.filterToggleGroup} auth-files-display-options-list`,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:unextractedOnly,onChange:e=>{setUnextractedOnly(e),e&&setExtractedOnly(!1),v(1)},ariaLabel:`仅显示未提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示未提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:extractedOnly,onChange:e=>{setExtractedOnly(e),e&&setUnextractedOnly(!1),v(1)},ariaLabel:`仅显示已提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示已提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})]})",
 		},
 		{
 			old: "(0,B.jsx)(V,{variant:`secondary`,size:`sm`,className:`${sb.viewModeButton} ${g===`all`?sb.viewModeButtonActive:``}`,onClick:()=>{m.length>mb?p(!0):d(`all`)},children:i(`auth_files.view_mode_all`)})",
@@ -250,6 +274,8 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .auth-files-display-options-list label[class*="ToggleSwitch-module__root"] input:checked:after{content:"";width:8px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
 .auth-files-display-options-list label[class*="ToggleSwitch-module__root"] [class*="ToggleSwitch-module__track"]{display:none!important}
 .auth-files-display-options-list label[class*="ToggleSwitch-module__root"] [class*="ToggleSwitch-module__label"]{color:var(--text-primary);font-size:13px;font-weight:700;line-height:1.35}
+.auth-file-card-quota-refresh-button{min-height:30px!important;height:30px!important;border-radius:8px!important;padding:0 8px!important;font-size:12px!important;font-weight:800!important;gap:0!important;white-space:nowrap}
+.auth-file-card-quota-refresh-button svg{width:14px;height:14px}
 @media (max-width:900px){.codex-card-admin-grid,.codex-card-admin-stats{grid-template-columns:1fr}.codex-card-admin-row,.codex-card-admin-list-head{align-items:stretch;flex-direction:column}.codex-card-admin-bulkbar{align-items:stretch;flex-direction:column}.codex-card-admin-search{min-width:0;flex:auto}.codex-card-admin-bulk-actions{align-items:stretch;flex-direction:column}.codex-card-admin-bulk-actions .codex-card-admin-button{width:100%}}
 @media (max-width:768px){.AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:1fr!important}.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o,.auth-files-display-options-menu{max-width:none}.auth-files-display-options-list{left:0;right:auto;width:100%;min-width:0}}
 ` + "`" + `;
@@ -1047,6 +1073,20 @@ const authFileCodexStatsScript = `
     }
   }
 
+  function closeDisplayOptionsMenus(event) {
+    var target = event && event.target;
+    document.querySelectorAll(".auth-files-display-options-menu[open]").forEach(function (menu) {
+      if (target && menu.contains(target)) return;
+      menu.removeAttribute("open");
+    });
+  }
+
+  function closeAllDisplayOptionsMenus() {
+    document.querySelectorAll(".auth-files-display-options-menu[open]").forEach(function (menu) {
+      menu.removeAttribute("open");
+    });
+  }
+
   function bootAuthFileStats() {
     ensurePanel();
     refreshStats(false);
@@ -1064,6 +1104,10 @@ const authFileCodexStatsScript = `
       setTimeout(function () { refreshStats(true); }, 150);
     });
     window.addEventListener("focus", function () { refreshStats(false); });
+    document.addEventListener("pointerdown", closeDisplayOptionsMenus, true);
+    document.addEventListener("keydown", function (event) {
+      if (event && event.key === "Escape") closeAllDisplayOptionsMenus();
+    }, true);
   }
 
   if (document.readyState === "loading") {

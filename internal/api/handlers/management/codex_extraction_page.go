@@ -94,7 +94,7 @@ const codexExtractionPageHTML = `<!doctype html>
     .format-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 13px; font-weight: 850; margin-bottom: 10px; }
     .format-heading small { color: var(--text-tertiary); font-size: 12px; font-weight: 650; }
     .format-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .format-card { position: relative; display: block; border: 1px solid var(--border); background: rgba(20,19,17,.68); border-radius: 14px; padding: 12px 15px; min-height: 64px; cursor: pointer; transition: border-color .16s, background .16s, transform .16s, box-shadow .16s; }
+    .format-card { position: relative; display: block; border: 1px solid var(--border); background: rgba(20,19,17,.68); border-radius: 14px; padding: 10px 15px; min-height: 52px; cursor: pointer; transition: border-color .16s, background .16s, transform .16s, box-shadow .16s; }
     .format-card:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.18); background: rgba(24,23,21,.88); }
     .format-card.active { border-color: rgba(185,240,110,.58); background: linear-gradient(135deg, rgba(255,243,77,.10), rgba(142,215,239,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
     .format-card input { position: absolute; opacity: 0; pointer-events: none; }
@@ -173,7 +173,7 @@ const codexExtractionPageHTML = `<!doctype html>
             </button>
           </div>
           <div id="status" class="status">就绪</div>
-          <div class="note">每行输入一张卡密或一个邮箱---keycode 链接；系统会自动读取链接中的 key 参数，兼容 hero-sms.com/cn/services 这类含 key 的服务链接。CPA 会合并为 ZIP，SUB 会导出单个 JSON。</div>
+          <div class="note">每行输入一张卡密或一个邮箱---keycode 链接；CPA 会合并为 ZIP，SUB 会导出单个 JSON。</div>
         </div>
       </section>
     </main>
