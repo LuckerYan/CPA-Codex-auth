@@ -914,6 +914,7 @@ const authFileCodexStatsScript = `
   var observerStarted = false;
   var lastFetchAt = 0;
   var fetching = false;
+  var pendingStatsRefresh = false;
 
   function ensureStatsStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -1064,6 +1065,7 @@ const authFileCodexStatsScript = `
     if (window.location.hash !== AUTH_FILES_HASH) {
       var existing = document.getElementById(PANEL_ID);
       if (existing) existing.remove();
+      lastFetchAt = 0;
       return null;
     }
     var controls = findFilterControls();
@@ -1074,6 +1076,7 @@ const authFileCodexStatsScript = `
       panel.id = PANEL_ID;
       panel.className = "auth-file-codex-stats-panel";
       panel.style.gridColumn = "1 / -1";
+      panel.dataset.codexStatsLoaded = "0";
       renderPanel(panel, {total: 0, normal: 0, banned: 0, unextracted: 0, extracted: 0}, true);
       var parent = controls.parentElement;
       if (parent && parent !== controls) {
@@ -1087,18 +1090,36 @@ const authFileCodexStatsScript = `
 
   async function refreshStats(force) {
     var panel = ensurePanel();
-    if (!panel || fetching) return;
+    if (!panel) return;
+    if (fetching) {
+      pendingStatsRefresh = true;
+      return;
+    }
     var now = Date.now();
-    if (!force && now - lastFetchAt < 4000) return;
+    var needsInitialLoad = panel.dataset.codexStatsLoaded !== "1";
+    if (!force && !needsInitialLoad && now - lastFetchAt < 4000) return;
     fetching = true;
+    pendingStatsRefresh = false;
     lastFetchAt = now;
     try {
       var data = await apiFetch("/auth-files?is_webui=1");
-      renderPanel(panel, normalizeStats(data), false);
+      var currentPanel = ensurePanel();
+      if (currentPanel) {
+        renderPanel(currentPanel, normalizeStats(data), false);
+        currentPanel.dataset.codexStatsLoaded = "1";
+      }
     } catch (err) {
-      panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计</div><div class="auth-file-codex-stat banned"><span class="auth-file-codex-stat-label">统计加载失败</span><span class="auth-file-codex-stat-value">!</span></div>';
+      var errorPanel = ensurePanel();
+      if (errorPanel) {
+        errorPanel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计</div><div class="auth-file-codex-stat banned"><span class="auth-file-codex-stat-label">统计加载失败</span><span class="auth-file-codex-stat-value">!</span></div>';
+        errorPanel.dataset.codexStatsLoaded = "1";
+      }
     } finally {
       fetching = false;
+      if (pendingStatsRefresh && window.location.hash === AUTH_FILES_HASH) {
+        pendingStatsRefresh = false;
+        setTimeout(function () { refreshStats(true); }, 50);
+      }
     }
   }
 
@@ -1127,6 +1148,7 @@ const authFileCodexStatsScript = `
     });
     observer.observe(document.body, {childList: true, subtree: true});
     window.addEventListener("hashchange", function () {
+      lastFetchAt = 0;
       setTimeout(function () { refreshStats(true); }, 100);
     });
     window.addEventListener("cli-proxy-auth-files-updated", function () {

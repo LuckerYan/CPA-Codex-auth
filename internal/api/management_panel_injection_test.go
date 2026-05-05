@@ -222,6 +222,27 @@ func TestAuthFileCodexStatsRefreshesAfterQuotaUpdateEvent(t *testing.T) {
 	assertContains(t, script, "setTimeout(function () { refreshStats(true); }, 150);")
 }
 
+func TestAuthFileCodexStatsForcesInitialReloadAfterNavigation(t *testing.T) {
+	script := []byte(authFileCodexStatsScript)
+
+	assertContains(t, script, "var pendingStatsRefresh = false;")
+	assertContains(t, script, "lastFetchAt = 0;")
+	assertContains(t, script, "panel.dataset.codexStatsLoaded = \"0\";")
+	assertContains(t, script, "var needsInitialLoad = panel.dataset.codexStatsLoaded !== \"1\";")
+	assertContains(t, script, "if (!force && !needsInitialLoad && now - lastFetchAt < 4000) return;")
+	assertContains(t, script, "currentPanel.dataset.codexStatsLoaded = \"1\";")
+	assertContains(t, script, "window.addEventListener(\"hashchange\", function () {\n      lastFetchAt = 0;")
+}
+
+func TestAuthFileCodexStatsRerunsPendingRefresh(t *testing.T) {
+	script := []byte(authFileCodexStatsScript)
+
+	assertContains(t, script, "if (fetching) {\n      pendingStatsRefresh = true;")
+	assertContains(t, script, "pendingStatsRefresh = false;\n    lastFetchAt = now;")
+	assertContains(t, script, "if (pendingStatsRefresh && window.location.hash === AUTH_FILES_HASH)")
+	assertContains(t, script, "setTimeout(function () { refreshStats(true); }, 50);")
+}
+
 func TestAuthFilesDisplayOptionsDropdownClosesOnOutsideClick(t *testing.T) {
 	script := []byte(authFileCodexStatsScript)
 
