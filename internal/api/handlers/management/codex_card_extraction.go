@@ -6,6 +6,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,9 +89,96 @@ type codexCardImportRequest struct {
 }
 
 type codexAuthExtractRequest struct {
-	Codes string   `json:"codes"`
-	Cards string   `json:"cards"`
-	Items []string `json:"items"`
+	Codes  string   `json:"codes"`
+	Cards  string   `json:"cards"`
+	Items  []string `json:"items"`
+	Format string   `json:"format"`
+}
+
+type codexSubExport struct {
+	ExportedAt string            `json:"exported_at"`
+	Proxies    []any             `json:"proxies"`
+	Accounts   []codexSubAccount `json:"accounts"`
+}
+
+type codexSubAccount struct {
+	Name               string              `json:"name"`
+	Platform           string              `json:"platform"`
+	Type               string              `json:"type"`
+	Credentials        codexSubCredentials `json:"credentials"`
+	Extra              codexSubExtra       `json:"extra"`
+	Concurrency        int                 `json:"concurrency"`
+	Priority           int                 `json:"priority"`
+	RateMultiplier     int                 `json:"rate_multiplier"`
+	AutoPauseOnExpired bool                `json:"auto_pause_on_expired"`
+}
+
+type codexSubCredentials struct {
+	AccessToken      string         `json:"access_token"`
+	ChatgptAccountID string         `json:"chatgpt_account_id"`
+	ChatgptUserID    string         `json:"chatgpt_user_id"`
+	ClientID         string         `json:"client_id"`
+	Email            string         `json:"email"`
+	ExpiresAt        string         `json:"expires_at"`
+	IDToken          string         `json:"id_token"`
+	ModelMapping     map[string]any `json:"model_mapping"`
+	OrganizationID   string         `json:"organization_id"`
+	PlanType         string         `json:"plan_type"`
+	RefreshToken     string         `json:"refresh_token"`
+}
+
+type codexSubExtra struct {
+	Codex5HResetAfterSeconds             int    `json:"codex_5h_reset_after_seconds"`
+	Codex5HResetAt                       string `json:"codex_5h_reset_at"`
+	Codex5HUsedPercent                   int    `json:"codex_5h_used_percent"`
+	Codex5HWindowMinutes                 int    `json:"codex_5h_window_minutes"`
+	Codex7DResetAfterSeconds             int    `json:"codex_7d_reset_after_seconds"`
+	Codex7DResetAt                       string `json:"codex_7d_reset_at"`
+	Codex7DUsedPercent                   int    `json:"codex_7d_used_percent"`
+	Codex7DWindowMinutes                 int    `json:"codex_7d_window_minutes"`
+	CodexPrimaryOverSecondaryPercent     int    `json:"codex_primary_over_secondary_percent"`
+	CodexPrimaryResetAfterSeconds        int    `json:"codex_primary_reset_after_seconds"`
+	CodexPrimaryResetAt                  string `json:"codex_primary_reset_at"`
+	CodexPrimaryUsedPercent              int    `json:"codex_primary_used_percent"`
+	CodexPrimaryWindowMinutes            int    `json:"codex_primary_window_minutes"`
+	CodexSecondaryResetAfterSeconds      int    `json:"codex_secondary_reset_after_seconds"`
+	CodexSecondaryUsedPercent            int    `json:"codex_secondary_used_percent"`
+	CodexSecondaryWindowMinutes          int    `json:"codex_secondary_window_minutes"`
+	CodexUsageUpdatedAt                  string `json:"codex_usage_updated_at"`
+	OpenAIOAuthPassthrough               bool   `json:"openai_oauth_passthrough"`
+	OpenAIOAuthResponsesWebsocketsV2     bool   `json:"openai_oauth_responses_websockets_v2_enabled"`
+	OpenAIOAuthResponsesWebsocketsV2Mode string `json:"openai_oauth_responses_websockets_v2_mode"`
+	OpenAIPassthrough                    bool   `json:"openai_passthrough"`
+	PrivacyMode                          string `json:"privacy_mode"`
+}
+
+type codexQuotaUsageResponse struct {
+	UserID               string                 `json:"user_id"`
+	AccountID            string                 `json:"account_id"`
+	Email                string                 `json:"email"`
+	PlanType             string                 `json:"plan_type"`
+	RateLimit            *codexQuotaUsageLimits `json:"rate_limit"`
+	CodeReviewRateLimit  any                    `json:"code_review_rate_limit"`
+	AdditionalRateLimits any                    `json:"additional_rate_limits"`
+	Credits              any                    `json:"credits"`
+	SpendControl         any                    `json:"spend_control"`
+	RateLimitReachedType any                    `json:"rate_limit_reached_type"`
+	Promo                any                    `json:"promo"`
+	ReferralBeacon       any                    `json:"referral_beacon"`
+}
+
+type codexQuotaUsageLimits struct {
+	Allowed         bool                  `json:"allowed"`
+	LimitReached    bool                  `json:"limit_reached"`
+	PrimaryWindow   codexQuotaUsageWindow `json:"primary_window"`
+	SecondaryWindow codexQuotaUsageWindow `json:"secondary_window"`
+}
+
+type codexQuotaUsageWindow struct {
+	UsedPercent        int   `json:"used_percent"`
+	LimitWindowSeconds int   `json:"limit_window_seconds"`
+	ResetAfterSeconds  int   `json:"reset_after_seconds"`
+	ResetAt            int64 `json:"reset_at"`
 }
 
 type codexCardBatchRequest struct {
@@ -1173,6 +1262,11 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
+	format, errFormat := normalizeCodexExtractFormat(req.Format)
+	if errFormat != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errFormat.Error()})
+		return
+	}
 	cardCodes := splitCodexCardExtractInput(req)
 	if len(cardCodes) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no card codes supplied"})
@@ -1223,10 +1317,28 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errLoad.Error()})
 		return
 	}
-	zipBytes, zipName, errZip := buildCodexAuthZip(files)
-	if errZip != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errZip.Error()})
-		return
+	var (
+		bodyBytes    []byte
+		downloadName string
+		writeOutput  func(*gin.Context, string, []byte) error
+	)
+	switch format {
+	case "sub":
+		var errSub error
+		bodyBytes, downloadName, errSub = buildCodexAuthSubJSONWithContext(c.Request.Context(), h, files)
+		if errSub != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errSub.Error()})
+			return
+		}
+		writeOutput = writeCodexAuthSubJSON
+	default:
+		var errZip error
+		bodyBytes, downloadName, errZip = buildCodexAuthZip(files)
+		if errZip != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errZip.Error()})
+			return
+		}
+		writeOutput = writeCodexAuthZip
 	}
 	if errRedeem := store.redeem(cardCodes, files); errRedeem != nil {
 		status := http.StatusConflict
@@ -1236,8 +1348,8 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(status, gin.H{"error": errRedeem.Error()})
 		return
 	}
-	if errWrite := writeCodexAuthZip(c, zipName, zipBytes); errWrite != nil {
-		log.WithError(errWrite).Error("failed to write codex auth zip")
+	if errWrite := writeOutput(c, downloadName, bodyBytes); errWrite != nil {
+		log.WithError(errWrite).Error("failed to write codex auth extraction")
 		return
 	}
 }
@@ -1679,6 +1791,615 @@ func (h *Handler) loadCodexAuthFiles(candidates []codexAuthCandidate) ([]codexSe
 	return out, nil
 }
 
+func normalizeCodexExtractFormat(raw string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "", "cpa", "zip", "codex", "codex_zip", "codex-zip":
+		return "cpa", nil
+	case "sub", "sub2api", "sub_json", "sub-json":
+		return "sub", nil
+	default:
+		return "", fmt.Errorf("unsupported extract format: %s", raw)
+	}
+}
+
+func buildCodexAuthSubJSON(files []codexSelectedAuth) ([]byte, string, error) {
+	return buildCodexAuthSubJSONWithContext(context.Background(), nil, files)
+}
+
+func buildCodexAuthSubJSONWithContext(ctx context.Context, h *Handler, files []codexSelectedAuth) ([]byte, string, error) {
+	if len(files) == 0 {
+		return nil, "", fmt.Errorf("no codex auth files selected")
+	}
+	accounts := make([]codexSubAccount, 0, len(files))
+	for _, file := range files {
+		account, errAccount := codexSelectedAuthToSubAccountWithContext(ctx, h, file)
+		if errAccount != nil {
+			return nil, "", errAccount
+		}
+		accounts = append(accounts, account)
+	}
+	sort.SliceStable(accounts, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(accounts[i].Name))
+		right := strings.ToLower(strings.TrimSpace(accounts[j].Name))
+		if left == right {
+			return accounts[i].Credentials.Email < accounts[j].Credentials.Email
+		}
+		return left < right
+	})
+
+	now := time.Now()
+	payload := codexSubExport{
+		ExportedAt: now.UTC().Format(time.RFC3339),
+		Proxies:    []any{},
+		Accounts:   accounts,
+	}
+	data, errMarshal := json.MarshalIndent(payload, "", "  ")
+	if errMarshal != nil {
+		return nil, "", fmt.Errorf("encode sub2api account export: %w", errMarshal)
+	}
+	data = append(data, '\n')
+	fileName := fmt.Sprintf("sub2api-account-%s.json", now.In(time.Local).Format("20060102150405"))
+	return data, fileName, nil
+}
+
+func codexSelectedAuthToSubAccount(file codexSelectedAuth) (codexSubAccount, error) {
+	return codexSelectedAuthToSubAccountWithContext(context.Background(), nil, file)
+}
+
+func codexSelectedAuthToSubAccountWithContext(ctx context.Context, h *Handler, file codexSelectedAuth) (codexSubAccount, error) {
+	metadata, errMetadata := decodeCodexSelectedAuthMetadata(file)
+	if errMetadata != nil {
+		return codexSubAccount{}, errMetadata
+	}
+
+	idToken := codexSubString(metadata, "id_token")
+	accessToken := codexSubString(metadata, "access_token")
+	refreshToken := codexSubString(metadata, "refresh_token")
+
+	idClaims, _ := codexjwt.ParseJWTToken(idToken)
+	accessClaims := decodeCodexJWTClaimsMap(accessToken)
+	accessAuthInfo := codexSubNestedMap(accessClaims, "https://api.openai.com/auth")
+	accessProfile := codexSubNestedMap(accessClaims, "https://api.openai.com/profile")
+	accountID := firstNonEmpty(
+		codexSubString(metadata, "chatgpt_account_id"),
+		codexSubString(metadata, "account_id"),
+		codexSubJWTAccountID(idClaims),
+		codexSubString(accessAuthInfo, "chatgpt_account_id"),
+	)
+	usage := fetchCodexUsageSnapshot(ctx, h, file.AuthID, accountID, accessToken)
+
+	email := firstNonEmpty(
+		codexSubString(metadata, "email"),
+		codexSubUsageString(usage, func(u *codexQuotaUsageResponse) string { return u.Email }),
+		codexSubString(accessProfile, "email"),
+		codexSubJWTEmail(idClaims),
+	)
+	chatgptUserID := firstNonEmpty(
+		codexSubString(metadata, "chatgpt_user_id"),
+		codexSubUsageString(usage, func(u *codexQuotaUsageResponse) string { return u.UserID }),
+		codexSubJWTUserID(idClaims),
+		codexSubString(accessAuthInfo, "chatgpt_user_id"),
+		codexSubString(accessAuthInfo, "user_id"),
+	)
+	planType := firstNonEmpty(
+		codexSubString(metadata, "plan_type"),
+		codexSubUsageString(usage, func(u *codexQuotaUsageResponse) string { return u.PlanType }),
+		codexSubJWTPlanType(idClaims),
+		codexSubString(accessAuthInfo, "chatgpt_plan_type"),
+	)
+	name := firstNonEmpty(
+		codexSubString(metadata, "name"),
+		email,
+		codexSubNameFromFile(file.FileName),
+	)
+
+	return codexSubAccount{
+		Name:     name,
+		Platform: "openai",
+		Type:     "oauth",
+		Credentials: codexSubCredentials{
+			AccessToken:      accessToken,
+			ChatgptAccountID: accountID,
+			ChatgptUserID:    chatgptUserID,
+			ClientID: firstNonEmpty(
+				codexSubString(metadata, "client_id"),
+				codexSubString(accessClaims, "client_id"),
+				codexSubAudClientID(idClaims),
+				codexjwt.ClientID,
+			),
+			Email:          email,
+			ExpiresAt:      codexSubExpiresAt(metadata, accessClaims),
+			IDToken:        idToken,
+			ModelMapping:   codexSubModelMapping(metadata),
+			OrganizationID: firstNonEmpty(codexSubString(metadata, "organization_id"), codexSubString(accessAuthInfo, "organization_id"), codexSubOrganizationID(idClaims)),
+			PlanType:       planType,
+			RefreshToken:   refreshToken,
+		},
+		Extra:              codexSubExtraFromUsage(metadata, usage),
+		Concurrency:        codexSubInt(metadata, "concurrency", 100),
+		Priority:           codexSubInt(metadata, "priority", 1),
+		RateMultiplier:     codexSubInt(metadata, "rate_multiplier", 1),
+		AutoPauseOnExpired: codexSubBool(metadata, "auto_pause_on_expired", true),
+	}, nil
+}
+
+func decodeCodexSelectedAuthMetadata(file codexSelectedAuth) (map[string]any, error) {
+	metadata := make(map[string]any)
+	decoder := json.NewDecoder(bytes.NewReader(file.Data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&metadata); err != nil {
+		name := strings.TrimSpace(file.FileName)
+		if name == "" {
+			name = strings.TrimSpace(file.AuthID)
+		}
+		return nil, fmt.Errorf("decode codex auth file %s for sub2api export: %w", name, err)
+	}
+	return metadata, nil
+}
+
+func codexSubExtraFromMetadata(metadata map[string]any) codexSubExtra {
+	return codexSubExtra{
+		Codex5HResetAfterSeconds:             codexSubInt(metadata, "codex_5h_reset_after_seconds", 0),
+		Codex5HResetAt:                       codexSubString(metadata, "codex_5h_reset_at"),
+		Codex5HUsedPercent:                   codexSubInt(metadata, "codex_5h_used_percent", 0),
+		Codex5HWindowMinutes:                 codexSubInt(metadata, "codex_5h_window_minutes", 300),
+		Codex7DResetAfterSeconds:             codexSubInt(metadata, "codex_7d_reset_after_seconds", 0),
+		Codex7DResetAt:                       codexSubString(metadata, "codex_7d_reset_at"),
+		Codex7DUsedPercent:                   codexSubInt(metadata, "codex_7d_used_percent", 0),
+		Codex7DWindowMinutes:                 codexSubInt(metadata, "codex_7d_window_minutes", 10080),
+		CodexPrimaryOverSecondaryPercent:     codexSubInt(metadata, "codex_primary_over_secondary_percent", 0),
+		CodexPrimaryResetAfterSeconds:        codexSubInt(metadata, "codex_primary_reset_after_seconds", 0),
+		CodexPrimaryResetAt:                  codexSubString(metadata, "codex_primary_reset_at"),
+		CodexPrimaryUsedPercent:              codexSubInt(metadata, "codex_primary_used_percent", 0),
+		CodexPrimaryWindowMinutes:            codexSubInt(metadata, "codex_primary_window_minutes", 300),
+		CodexSecondaryResetAfterSeconds:      codexSubInt(metadata, "codex_secondary_reset_after_seconds", 0),
+		CodexSecondaryUsedPercent:            codexSubInt(metadata, "codex_secondary_used_percent", 0),
+		CodexSecondaryWindowMinutes:          codexSubInt(metadata, "codex_secondary_window_minutes", 10080),
+		CodexUsageUpdatedAt:                  codexSubString(metadata, "codex_usage_updated_at"),
+		OpenAIOAuthPassthrough:               codexSubBool(metadata, "openai_oauth_passthrough", false),
+		OpenAIOAuthResponsesWebsocketsV2:     codexSubBool(metadata, "openai_oauth_responses_websockets_v2_enabled", codexSubBool(metadata, "websockets", true)),
+		OpenAIOAuthResponsesWebsocketsV2Mode: firstNonEmpty(codexSubString(metadata, "openai_oauth_responses_websockets_v2_mode"), "ctx_pool"),
+		OpenAIPassthrough:                    codexSubBool(metadata, "openai_passthrough", true),
+		PrivacyMode:                          firstNonEmpty(codexSubString(metadata, "privacy_mode"), "training_off"),
+	}
+}
+
+func codexSubExtraFromUsage(metadata map[string]any, usage *codexQuotaUsageResponse) codexSubExtra {
+	extra := codexSubExtraFromMetadata(metadata)
+	if usage == nil || usage.RateLimit == nil {
+		return extra
+	}
+	primary := usage.RateLimit.PrimaryWindow
+	secondary := usage.RateLimit.SecondaryWindow
+	if primary.LimitWindowSeconds > 0 {
+		extra.Codex5HWindowMinutes = primary.LimitWindowSeconds / 60
+		extra.CodexPrimaryWindowMinutes = extra.Codex5HWindowMinutes
+	}
+	if secondary.LimitWindowSeconds > 0 {
+		extra.Codex7DWindowMinutes = secondary.LimitWindowSeconds / 60
+		extra.CodexSecondaryWindowMinutes = extra.Codex7DWindowMinutes
+	}
+	extra.Codex5HResetAfterSeconds = primary.ResetAfterSeconds
+	extra.Codex5HResetAt = codexSubUnixTimestampToRFC3339(primary.ResetAt)
+	extra.Codex5HUsedPercent = primary.UsedPercent
+	extra.Codex7DResetAfterSeconds = secondary.ResetAfterSeconds
+	extra.Codex7DResetAt = codexSubUnixTimestampToRFC3339(secondary.ResetAt)
+	extra.Codex7DUsedPercent = secondary.UsedPercent
+	extra.CodexPrimaryOverSecondaryPercent = primary.UsedPercent - secondary.UsedPercent
+	if extra.CodexPrimaryOverSecondaryPercent < 0 {
+		extra.CodexPrimaryOverSecondaryPercent = 0
+	}
+	extra.CodexPrimaryResetAfterSeconds = primary.ResetAfterSeconds
+	extra.CodexPrimaryResetAt = codexSubUnixTimestampToRFC3339(primary.ResetAt)
+	extra.CodexPrimaryUsedPercent = primary.UsedPercent
+	extra.CodexSecondaryResetAfterSeconds = secondary.ResetAfterSeconds
+	extra.CodexSecondaryUsedPercent = secondary.UsedPercent
+	if extra.CodexUsageUpdatedAt == "" {
+		extra.CodexUsageUpdatedAt = time.Now().In(time.Local).Format(time.RFC3339)
+	}
+	return extra
+}
+
+func codexSubModelMapping(metadata map[string]any) map[string]any {
+	value, ok := metadata["model_mapping"]
+	if !ok || value == nil {
+		return map[string]any{}
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = item
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = item
+		}
+		return out
+	default:
+		return map[string]any{}
+	}
+}
+
+func decodeCodexJWTClaimsMap(token string) map[string]any {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	data, errDecode := base64.RawURLEncoding.DecodeString(parts[1])
+	if errDecode != nil {
+		data, errDecode = base64.URLEncoding.DecodeString(parts[1])
+	}
+	if errDecode != nil {
+		return nil
+	}
+	var claims map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&claims); err != nil {
+		return nil
+	}
+	return claims
+}
+
+func codexSubNestedMap(values map[string]any, key string) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	value, ok := values[key]
+	if !ok {
+		return nil
+	}
+	if nested, ok := value.(map[string]any); ok {
+		return nested
+	}
+	return nil
+}
+
+func codexSubExpiresAt(metadata map[string]any, accessClaims map[string]any) string {
+	for _, key := range []string{"expires_at", "expired", "expire", "expires"} {
+		raw := codexSubString(metadata, key)
+		if raw == "" {
+			continue
+		}
+		if formatted := codexSubFormatTimestamp(raw); formatted != "" {
+			return formatted
+		}
+		return raw
+	}
+	if exp, ok := codexSubInt64(accessClaims, "exp"); ok && exp > 0 {
+		return time.Unix(exp, 0).In(time.Local).Format(time.RFC3339)
+	}
+	return ""
+}
+
+func codexSubFormatTimestamp(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed.In(time.Local).Format(time.RFC3339)
+		}
+	}
+	if unix, err := strconv.ParseInt(raw, 10, 64); err == nil && unix > 0 {
+		if unix > 1_000_000_000_000 {
+			return time.UnixMilli(unix).In(time.Local).Format(time.RFC3339)
+		}
+		return time.Unix(unix, 0).In(time.Local).Format(time.RFC3339)
+	}
+	return ""
+}
+
+func codexSubString(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case json.Number:
+		return strings.TrimSpace(typed.String())
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func codexSubInt(values map[string]any, key string, defaultValue int) int {
+	if len(values) == 0 {
+		return defaultValue
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return defaultValue
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed)
+		}
+		if parsed, err := typed.Float64(); err == nil {
+			return int(parsed)
+		}
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return defaultValue
+		}
+		if parsed, err := strconv.Atoi(trimmed); err == nil {
+			return parsed
+		}
+		if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return int(parsed)
+		}
+	}
+	return defaultValue
+}
+
+func codexSubInt64(values map[string]any, key string) (int64, bool) {
+	if len(values) == 0 {
+		return 0, false
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case float64:
+		return int64(typed), true
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return parsed, true
+		}
+		if parsed, err := typed.Float64(); err == nil {
+			return int64(parsed), true
+		}
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return 0, false
+		}
+		if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func codexSubBool(values map[string]any, key string, defaultValue bool) bool {
+	if len(values) == 0 {
+		return defaultValue
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return defaultValue
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return defaultValue
+		}
+		parsed, err := strconv.ParseBool(trimmed)
+		if err != nil {
+			return defaultValue
+		}
+		return parsed
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case float64:
+		return typed != 0
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return defaultValue
+		}
+		return parsed != 0
+	default:
+		return defaultValue
+	}
+}
+
+func codexSubJWTEmail(claims *codexjwt.JWTClaims) string {
+	if claims == nil {
+		return ""
+	}
+	return strings.TrimSpace(claims.Email)
+}
+
+func codexSubJWTAccountID(claims *codexjwt.JWTClaims) string {
+	if claims == nil {
+		return ""
+	}
+	return strings.TrimSpace(claims.CodexAuthInfo.ChatgptAccountID)
+}
+
+func codexSubJWTUserID(claims *codexjwt.JWTClaims) string {
+	if claims == nil {
+		return ""
+	}
+	return strings.TrimSpace(claims.CodexAuthInfo.ChatgptUserID)
+}
+
+func codexSubJWTPlanType(claims *codexjwt.JWTClaims) string {
+	if claims == nil {
+		return ""
+	}
+	return strings.TrimSpace(claims.CodexAuthInfo.ChatgptPlanType)
+}
+
+func codexSubAudClientID(claims *codexjwt.JWTClaims) string {
+	if claims == nil {
+		return ""
+	}
+	for _, value := range claims.Aud {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func codexSubOrganizationID(claims *codexjwt.JWTClaims) string {
+	if claims == nil {
+		return ""
+	}
+	for _, org := range claims.CodexAuthInfo.Organizations {
+		if org.IsDefault && strings.TrimSpace(org.ID) != "" {
+			return strings.TrimSpace(org.ID)
+		}
+	}
+	for _, org := range claims.CodexAuthInfo.Organizations {
+		if strings.TrimSpace(org.ID) != "" {
+			return strings.TrimSpace(org.ID)
+		}
+	}
+	return ""
+}
+
+func codexSubNameFromFile(name string) string {
+	cleaned := strings.TrimSpace(filepath.Base(name))
+	if cleaned == "" || cleaned == "." {
+		return "codex-account"
+	}
+	cleaned = strings.TrimSuffix(cleaned, filepath.Ext(cleaned))
+	cleaned = strings.TrimPrefix(cleaned, "codex-")
+	if cleaned == "" {
+		return "codex-account"
+	}
+	return cleaned
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func codexSubUnixTimestampToRFC3339(unixValue int64) string {
+	if unixValue <= 0 {
+		return ""
+	}
+	return time.Unix(unixValue, 0).In(time.Local).Format(time.RFC3339)
+}
+
+func codexSubUsageString(usage *codexQuotaUsageResponse, selectFn func(*codexQuotaUsageResponse) string) string {
+	if usage == nil || selectFn == nil {
+		return ""
+	}
+	return strings.TrimSpace(selectFn(usage))
+}
+
+func fetchCodexUsageSnapshot(ctx context.Context, h *Handler, authID, accountID, accessToken string) *codexQuotaUsageResponse {
+	accountID = strings.TrimSpace(accountID)
+	accessToken = strings.TrimSpace(accessToken)
+	if accountID == "" || accessToken == "" {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if h == nil {
+		return nil
+	}
+	if h != nil && h.authManager != nil {
+		if auth, ok := h.authManager.GetByID(strings.TrimSpace(authID)); ok && auth != nil {
+			req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, codexQuotaUsageURL, nil)
+			if errReq == nil {
+				req.Header.Set("Accept", "application/json")
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("User-Agent", codexQuotaUserAgent)
+				req.Header.Set("Chatgpt-Account-Id", accountID)
+				resp, errExec := h.authManager.HttpRequest(ctx, auth, req)
+				if resp != nil {
+					defer func() {
+						if errClose := resp.Body.Close(); errClose != nil {
+							log.WithError(errClose).Debug("failed to close codex usage response body")
+						}
+					}()
+				}
+				if errExec == nil && resp != nil {
+					if snapshot := decodeCodexUsageSnapshotResponse(resp); snapshot != nil {
+						return snapshot
+					}
+				}
+			}
+		}
+	}
+	req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, codexQuotaUsageURL, nil)
+	if errReq != nil {
+		return nil
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", codexQuotaUserAgent)
+	req.Header.Set("Chatgpt-Account-Id", accountID)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	client := &http.Client{}
+	if h != nil && h.cfg != nil {
+		client = util.SetProxy(&h.cfg.SDKConfig, client)
+	}
+	resp, errExec := client.Do(req)
+	if errExec != nil || resp == nil {
+		return nil
+	}
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.WithError(errClose).Debug("failed to close fallback codex usage response body")
+		}
+	}()
+	return decodeCodexUsageSnapshotResponse(resp)
+}
+
+func decodeCodexUsageSnapshotResponse(resp *http.Response) *codexQuotaUsageResponse {
+	if resp == nil {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil
+	}
+	body, errRead := io.ReadAll(resp.Body)
+	if errRead != nil || len(body) == 0 {
+		return nil
+	}
+	var parsed codexQuotaUsageResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil
+	}
+	return &parsed
+}
+
 func buildCodexAuthZip(files []codexSelectedAuth) ([]byte, string, error) {
 	if len(files) == 0 {
 		return nil, "", fmt.Errorf("no codex auth files selected")
@@ -1717,6 +2438,29 @@ func writeCodexAuthZip(c *gin.Context, zipName string, zipBytes []byte) error {
 	c.Status(http.StatusOK)
 	if _, errWrite := c.Writer.Write(zipBytes); errWrite != nil {
 		return fmt.Errorf("write zip response: %w", errWrite)
+	}
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
+}
+
+func writeCodexAuthSubJSON(c *gin.Context, fileName string, jsonBytes []byte) error {
+	if c == nil {
+		return fmt.Errorf("gin context is nil")
+	}
+	if len(jsonBytes) == 0 {
+		return fmt.Errorf("no codex auth sub json data available")
+	}
+	if strings.TrimSpace(fileName) == "" {
+		fileName = fmt.Sprintf("sub2api-account-%s.json", time.Now().In(time.Local).Format("20060102150405"))
+	}
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+	c.Header("Cache-Control", "no-store")
+	c.Status(http.StatusOK)
+	if _, errWrite := c.Writer.Write(jsonBytes); errWrite != nil {
+		return fmt.Errorf("write sub json response: %w", errWrite)
 	}
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()

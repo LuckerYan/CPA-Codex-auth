@@ -90,6 +90,17 @@ const codexExtractionPageHTML = `<!doctype html>
     textarea { width: 100%; min-height: 112px; border: 1px solid var(--border-strong); background: rgba(14,13,12,.86); color: var(--text-primary); border-radius: 15px; outline: none; padding: 14px 18px; font: inherit; font-size: 15px; line-height: 1.55; resize: vertical; transition: border-color .16s, box-shadow .16s, background .16s; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .01em; }
     textarea::placeholder { color: rgba(185,178,170,.5); font-family: inherit; }
     textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(139,134,128,.16); background: rgba(14,13,12,.96); }
+    .format-panel { border: 1px solid var(--border); background: linear-gradient(180deg, rgba(14,13,12,.58), rgba(14,13,12,.36)); border-radius: 16px; padding: 14px; }
+    .format-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 13px; font-weight: 850; margin-bottom: 10px; }
+    .format-heading small { color: var(--text-tertiary); font-size: 12px; font-weight: 650; }
+    .format-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .format-card { position: relative; display: block; border: 1px solid var(--border); background: rgba(20,19,17,.68); border-radius: 14px; padding: 14px 15px; min-height: 92px; cursor: pointer; transition: border-color .16s, background .16s, transform .16s, box-shadow .16s; }
+    .format-card:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.18); background: rgba(24,23,21,.88); }
+    .format-card.active { border-color: rgba(185,240,110,.58); background: linear-gradient(135deg, rgba(255,243,77,.10), rgba(142,215,239,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+    .format-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .format-card .format-name { display: block; color: var(--text-primary); font-size: 14px; font-weight: 900; margin-bottom: 7px; }
+    .format-card .format-desc { display: block; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; padding-right: 48px; }
+    .format-card.active::after { content: "已选择"; position: absolute; right: 12px; top: 12px; color: #1b1a16; background: linear-gradient(135deg, var(--accent-a), var(--accent-b)); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 900; }
     button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 26px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; display: inline-flex; align-items: center; gap: 8px; letter-spacing: .01em; align-self: center; }
     button svg { width: 16px; height: 16px; }
     button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 32px rgba(245,242,238,.12); }
@@ -108,6 +119,7 @@ const codexExtractionPageHTML = `<!doctype html>
       .brand .sub { display: none; }
       .pill { padding: 8px 12px; font-size: 12px; }
       .input-row { grid-template-columns: 1fr; }
+      .format-options { grid-template-columns: 1fr; }
       button { width: 100%; justify-content: center; }
       .panel::before { display: none; }
       .footer { padding: 12px 18px 22px; }
@@ -128,10 +140,11 @@ const codexExtractionPageHTML = `<!doctype html>
         <div class="hero">
           <div class="kicker">Codex Auth File</div>
           <h1>输入卡密，<span class="hl">一键提取</span></h1>
-          <p class="desc">支持粘贴卡密或邮箱---keycode 链接，系统验活通过后打包为 ZIP 下载。</p>
+          <p class="desc">支持粘贴卡密或邮箱---keycode 链接，系统验活通过后可导出 CPA ZIP 或 SUB JSON。</p>
           <div class="meta-row">
             <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>验活后下发</span>
-            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>ZIP 打包</span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>CPA ZIP</span>
+            <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>SUB JSON</span>
             <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>批量支持</span>
           </div>
         </div>
@@ -141,13 +154,28 @@ const codexExtractionPageHTML = `<!doctype html>
           </div>
           <div class="input-row">
             <textarea id="cardCode" autocomplete="one-time-code" spellcheck="false" rows="3" placeholder="user@example.com---https://mail.lucker.cc.cd/keycode?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
+            <div class="format-panel" id="formatPanel">
+              <div class="format-heading"><span>提取格式转换</span><small>点击提取后按选中格式下载</small></div>
+              <div class="format-options" role="radiogroup" aria-label="提取格式">
+                <label class="format-card active" data-format-card="cpa">
+                  <input type="radio" name="extractFormat" value="cpa" checked>
+                  <span class="format-name">CPA 格式（当前）</span>
+                  <span class="format-desc">多个 Codex 认证 JSON 打包成 ZIP；每个账号保持独立文件。</span>
+                </label>
+                <label class="format-card" data-format-card="sub">
+                  <input type="radio" name="extractFormat" value="sub">
+                  <span class="format-name">SUB 格式</span>
+                  <span class="format-desc">生成单个 sub2api-account JSON；多个账号合并在 accounts 数组内，不压缩。</span>
+                </label>
+              </div>
+            </div>
             <button id="extractButton" type="button">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
               <span>提取</span>
             </button>
           </div>
           <div id="status" class="status">就绪</div>
-          <div class="note">每行输入一张卡密或一个邮箱---keycode 链接；系统会自动读取链接中的 key 参数。批量提交将合并为同一 ZIP，账号异常会自动切换。</div>
+          <div class="note">每行输入一张卡密或一个邮箱---keycode 链接；系统会自动读取链接中的 key 参数，兼容 hero-sms.com/cn/services 这类含 key 的服务链接。CPA 会合并为 ZIP，SUB 会导出单个 JSON。</div>
         </div>
       </section>
     </main>
@@ -160,6 +188,8 @@ const codexExtractionPageHTML = `<!doctype html>
     var input = document.getElementById('cardCode');
     var button = document.getElementById('extractButton');
     var statusLine = document.getElementById('status');
+    var formatInputs = document.querySelectorAll('input[name="extractFormat"]');
+    var formatCards = document.querySelectorAll('[data-format-card]');
 
     function setStatus(message, type) {
       statusLine.textContent = message || '';
@@ -181,6 +211,29 @@ const codexExtractionPageHTML = `<!doctype html>
       a.click();
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+
+    function defaultDownloadName(format, count) {
+      if (format === 'sub') {
+        return 'sub2api-account.json';
+      }
+      return count > 1 ? 'codex-auth-files.zip' : 'codex-auth-file.zip';
+    }
+
+    function getSelectedFormat() {
+      for (var i = 0; i < formatInputs.length; i++) {
+        if (formatInputs[i].checked) return formatInputs[i].value || 'cpa';
+      }
+      return 'cpa';
+    }
+
+    function refreshFormatCards() {
+      var format = getSelectedFormat();
+      for (var i = 0; i < formatCards.length; i++) {
+        var card = formatCards[i];
+        var active = card.getAttribute('data-format-card') === format;
+        card.className = active ? 'format-card active' : 'format-card';
+      }
     }
 
     async function readError(resp) {
@@ -247,21 +300,23 @@ const codexExtractionPageHTML = `<!doctype html>
         return;
       }
       button.disabled = true;
-      setStatus(codes.length > 1 ? '验活中（' + codes.length + '）…' : '验活中…', '');
+      var format = getSelectedFormat();
+      var formatLabel = format === 'sub' ? 'SUB JSON' : 'CPA ZIP';
+      setStatus((codes.length > 1 ? '验活中（' + codes.length + '）' : '验活中') + ' · 准备 ' + formatLabel + '…', '');
       try {
         var resp = await fetch('/v0/codex-extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: codes })
+          body: JSON.stringify({ items: codes, format: format })
         });
         if (!resp.ok) {
           var err = await readError(resp);
           throw new Error(err.error || '提取失败');
         }
         var blob = await resp.blob();
-        var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || (codes.length > 1 ? 'codex-auth-files.zip' : 'codex-auth-file.zip');
+        var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || defaultDownloadName(format, codes.length);
         downloadBlob(blob, filename);
-        setStatus('提取成功 · ZIP 已开始下载', 'ok');
+        setStatus('提取成功 · ' + formatLabel + ' 已开始下载', 'ok');
         input.value = '';
       } catch (err) {
         setStatus(err.message || String(err), 'error');
@@ -271,6 +326,10 @@ const codexExtractionPageHTML = `<!doctype html>
     }
 
     button.addEventListener('click', extract);
+    for (var i = 0; i < formatInputs.length; i++) {
+      formatInputs[i].addEventListener('change', refreshFormatCards);
+    }
+    refreshFormatCards();
     input.addEventListener('keydown', function (event) {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') extract();
     });

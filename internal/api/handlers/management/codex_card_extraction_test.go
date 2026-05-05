@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	codexjwt "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
@@ -426,6 +428,296 @@ func TestExtractCodexAuthFilesReturnsZipAndRedeemsCards(t *testing.T) {
 	}
 }
 
+func TestExtractCodexAuthFilesReturnsSubJSONAndRedeemsCards(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	validA := writeTestCodexAuthFile(t, authDir, "codex-a.json", "a@example.com")
+	registerTestCodexAuth(t, manager, "codex-a.json", validA)
+
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes([]string{"card-a"}); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-A"],"format":"sub"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if contentType := w.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
+	}
+	if disposition := w.Header().Get("Content-Disposition"); !strings.Contains(disposition, "sub2api-account-") || !strings.Contains(disposition, ".json") {
+		t.Fatalf("expected sub2api json download name, got %q", disposition)
+	}
+
+	var payload codexSubExport
+	if errJSON := json.Unmarshal(w.Body.Bytes(), &payload); errJSON != nil {
+		t.Fatalf("unmarshal sub export: %v\n%s", errJSON, w.Body.String())
+	}
+	if payload.ExportedAt == "" {
+		t.Fatalf("expected exported_at to be set")
+	}
+	if len(payload.Proxies) != 0 {
+		t.Fatalf("expected empty proxies array, got %+v", payload.Proxies)
+	}
+	if len(payload.Accounts) != 1 {
+		t.Fatalf("expected one exported account, got %+v", payload.Accounts)
+	}
+	account := payload.Accounts[0]
+	if account.Name != "a@example.com" || account.Platform != "openai" || account.Type != "oauth" {
+		t.Fatalf("unexpected sub account identity: %+v", account)
+	}
+	if account.Credentials.AccessToken != "access-codex-a.json" || account.Credentials.RefreshToken != "refresh-codex-a.json" {
+		t.Fatalf("unexpected sub credentials: %+v", account.Credentials)
+	}
+	if account.Concurrency != 100 || account.Priority != 1 || account.RateMultiplier != 1 || !account.AutoPauseOnExpired {
+		t.Fatalf("unexpected sub account defaults: %+v", account)
+	}
+
+	cards, errList := store.list()
+	if errList != nil {
+		t.Fatalf("list cards: %v", errList)
+	}
+	if len(cards) != 1 || cards[0].Status != codexCardStatusRedeemed {
+		t.Fatalf("expected card to be redeemed after sub export, got %+v", cards)
+	}
+}
+
+func TestBuildCodexAuthSubJSONMatchesSub2APIShape(t *testing.T) {
+	accessToken := makeTestJWT(t, map[string]any{
+		"client_id": codexjwt.ClientID,
+		"exp":       1778701192,
+		"https://api.openai.com/auth": map[string]any{
+			"chatgpt_account_id": "account-sub",
+			"chatgpt_plan_type":  "plus",
+			"chatgpt_user_id":    "user-sub",
+			"user_id":            "user-sub",
+		},
+		"https://api.openai.com/profile": map[string]any{
+			"email":          "sub@example.com",
+			"email_verified": true,
+		},
+	})
+	idToken := makeTestJWT(t, map[string]any{
+		"aud":            []string{codexjwt.ClientID},
+		"email":          "sub@example.com",
+		"email_verified": true,
+		"https://api.openai.com/auth": map[string]any{
+			"chatgpt_account_id": "account-sub",
+			"chatgpt_plan_type":  "plus",
+			"chatgpt_user_id":    "user-sub",
+			"organizations": []map[string]any{{
+				"id":         "org-sub",
+				"is_default": true,
+				"role":       "owner",
+				"title":      "Personal",
+			}},
+			"user_id": "user-sub",
+		},
+	})
+	body, errMarshal := json.Marshal(map[string]any{
+		"id_token":                 idToken,
+		"access_token":             accessToken,
+		"refresh_token":            "rt-sub",
+		"account_id":               "account-sub",
+		"last_refresh":             "2026-01-01T00:00:00Z",
+		"email":                    "sub@example.com",
+		"type":                     "codex",
+		"expired":                  "2026-05-14T03:39:52+08:00",
+		"websockets":               true,
+		"codex_5h_used_percent":    44,
+		"codex_7d_used_percent":    75,
+		"codex_usage_updated_at":   "2026-05-04T21:03:39+08:00",
+		"openai_oauth_passthrough": false,
+		"openai_passthrough":       true,
+		"privacy_mode":             "training_off",
+		"concurrency":              100,
+		"priority":                 1,
+		"rate_multiplier":          1,
+		"auto_pause_on_expired":    true,
+		"model_mapping":            map[string]any{},
+	})
+	if errMarshal != nil {
+		t.Fatalf("marshal test auth: %v", errMarshal)
+	}
+
+	data, name, err := buildCodexAuthSubJSON([]codexSelectedAuth{{
+		AuthID:   "codex-sub@example.com.json",
+		FileName: "codex-sub@example.com.json",
+		Data:     body,
+	}})
+	if err != nil {
+		t.Fatalf("build sub json: %v", err)
+	}
+	if !strings.HasPrefix(name, "sub2api-account-") || !strings.HasSuffix(name, ".json") {
+		t.Fatalf("unexpected sub json file name: %s", name)
+	}
+
+	raw := string(data)
+	for _, want := range []string{
+		`"exported_at":`,
+		`"proxies": []`,
+		`"accounts": [`,
+		`"name": "sub@example.com"`,
+		`"platform": "openai"`,
+		`"type": "oauth"`,
+		`"credentials": {`,
+		`"model_mapping": {}`,
+		`"extra": {`,
+		`"auto_pause_on_expired": true`,
+	} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("sub json missing %q:\n%s", want, raw)
+		}
+	}
+
+	var payload codexSubExport
+	if errJSON := json.Unmarshal(data, &payload); errJSON != nil {
+		t.Fatalf("unmarshal sub export: %v", errJSON)
+	}
+	if len(payload.Accounts) != 1 {
+		t.Fatalf("expected one account, got %+v", payload.Accounts)
+	}
+	account := payload.Accounts[0]
+	if account.Credentials.ChatgptAccountID != "account-sub" {
+		t.Fatalf("unexpected chatgpt account id: %+v", account.Credentials)
+	}
+	if account.Credentials.ChatgptUserID != "user-sub" {
+		t.Fatalf("unexpected chatgpt user id: %+v", account.Credentials)
+	}
+	if account.Credentials.ClientID != codexjwt.ClientID {
+		t.Fatalf("unexpected client id: %+v", account.Credentials)
+	}
+	if account.Credentials.OrganizationID != "org-sub" || account.Credentials.PlanType != "plus" {
+		t.Fatalf("unexpected org/plan fields: %+v", account.Credentials)
+	}
+	if account.Extra.Codex5HWindowMinutes != 300 || account.Extra.Codex7DWindowMinutes != 10080 {
+		t.Fatalf("unexpected default codex windows: %+v", account.Extra)
+	}
+	if account.Extra.Codex5HUsedPercent != 44 || account.Extra.Codex7DUsedPercent != 75 {
+		t.Fatalf("unexpected copied codex usage: %+v", account.Extra)
+	}
+	if !account.Extra.OpenAIOAuthResponsesWebsocketsV2 || account.Extra.OpenAIOAuthResponsesWebsocketsV2Mode != "ctx_pool" {
+		t.Fatalf("unexpected websocket defaults: %+v", account.Extra)
+	}
+}
+
+func TestCodexSubExtraFromUsageMapsWhamUsageResponse(t *testing.T) {
+	raw := []byte(`{
+  "user_id": "user-YaTVgCePTqVDon9Z47GlgLt4",
+  "account_id": "user-YaTVgCePTqVDon9Z47GlgLt4",
+  "email": "avorx472as@lucker-yan.asia",
+  "plan_type": "plus",
+  "rate_limit": {
+    "allowed": true,
+    "limit_reached": false,
+    "primary_window": {
+      "used_percent": 0,
+      "limit_window_seconds": 18000,
+      "reset_after_seconds": 18000,
+      "reset_at": 1777923843
+    },
+    "secondary_window": {
+      "used_percent": 76,
+      "limit_window_seconds": 604800,
+      "reset_after_seconds": 355033,
+      "reset_at": 1778260876
+    }
+  },
+  "code_review_rate_limit": null,
+  "additional_rate_limits": null,
+  "credits": {
+    "has_credits": false,
+    "unlimited": false,
+    "overage_limit_reached": false,
+    "balance": "0"
+  },
+  "spend_control": {
+    "reached": false,
+    "individual_limit": null
+  },
+  "rate_limit_reached_type": null,
+  "promo": null,
+  "referral_beacon": null
+}`)
+	var usage codexQuotaUsageResponse
+	if err := json.Unmarshal(raw, &usage); err != nil {
+		t.Fatalf("unmarshal usage response: %v", err)
+	}
+
+	extra := codexSubExtraFromUsage(map[string]any{
+		"openai_oauth_passthrough": false,
+		"openai_passthrough":       true,
+		"privacy_mode":             "training_off",
+	}, &usage)
+
+	if got, want := extra.Codex5HResetAfterSeconds, 18000; got != want {
+		t.Fatalf("codex_5h_reset_after_seconds = %d, want %d", got, want)
+	}
+	if got, want := extra.Codex5HWindowMinutes, 300; got != want {
+		t.Fatalf("codex_5h_window_minutes = %d, want %d", got, want)
+	}
+	if got, want := extra.Codex5HUsedPercent, 0; got != want {
+		t.Fatalf("codex_5h_used_percent = %d, want %d", got, want)
+	}
+	if got, want := extra.Codex5HResetAt, time.Unix(1777923843, 0).In(time.Local).Format(time.RFC3339); got != want {
+		t.Fatalf("codex_5h_reset_at = %s, want %s", got, want)
+	}
+	if got, want := extra.Codex7DResetAfterSeconds, 355033; got != want {
+		t.Fatalf("codex_7d_reset_after_seconds = %d, want %d", got, want)
+	}
+	if got, want := extra.Codex7DWindowMinutes, 10080; got != want {
+		t.Fatalf("codex_7d_window_minutes = %d, want %d", got, want)
+	}
+	if got, want := extra.Codex7DUsedPercent, 76; got != want {
+		t.Fatalf("codex_7d_used_percent = %d, want %d", got, want)
+	}
+	if got, want := extra.Codex7DResetAt, time.Unix(1778260876, 0).In(time.Local).Format(time.RFC3339); got != want {
+		t.Fatalf("codex_7d_reset_at = %s, want %s", got, want)
+	}
+	if got, want := extra.CodexPrimaryOverSecondaryPercent, 0; got != want {
+		t.Fatalf("codex_primary_over_secondary_percent = %d, want %d", got, want)
+	}
+	if got, want := extra.CodexPrimaryResetAfterSeconds, 18000; got != want {
+		t.Fatalf("codex_primary_reset_after_seconds = %d, want %d", got, want)
+	}
+	if got, want := extra.CodexPrimaryUsedPercent, 0; got != want {
+		t.Fatalf("codex_primary_used_percent = %d, want %d", got, want)
+	}
+	if got, want := extra.CodexSecondaryResetAfterSeconds, 355033; got != want {
+		t.Fatalf("codex_secondary_reset_after_seconds = %d, want %d", got, want)
+	}
+	if got, want := extra.CodexSecondaryUsedPercent, 76; got != want {
+		t.Fatalf("codex_secondary_used_percent = %d, want %d", got, want)
+	}
+	if got, want := extra.CodexSecondaryWindowMinutes, 10080; got != want {
+		t.Fatalf("codex_secondary_window_minutes = %d, want %d", got, want)
+	}
+	if extra.CodexUsageUpdatedAt == "" {
+		t.Fatalf("expected codex_usage_updated_at to be populated")
+	}
+	if extra.OpenAIOAuthPassthrough != false || extra.OpenAIPassthrough != true || extra.PrivacyMode != "training_off" {
+		t.Fatalf("unexpected passthrough/privacy flags: %+v", extra)
+	}
+}
+
 func TestNormalizeCodexCardCodeValidatedExtractsURLKey(t *testing.T) {
 	raw := "https://email-verification-worker.1330257897.workers.dev/token-code?email=rzdsqn00pt@lucker-yan.asia&key=et_GHihiHG0SSKIx1q4UCpfAA"
 	got, ok := normalizeCodexCardCodeValidated(raw)
@@ -803,4 +1095,18 @@ func cloneTestMetadata(metadata map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func makeTestJWT(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	header := map[string]any{"alg": "none", "typ": "JWT"}
+	headerData, errHeader := json.Marshal(header)
+	if errHeader != nil {
+		t.Fatalf("marshal jwt header: %v", errHeader)
+	}
+	claimsData, errClaims := json.Marshal(claims)
+	if errClaims != nil {
+		t.Fatalf("marshal jwt claims: %v", errClaims)
+	}
+	return base64.RawURLEncoding.EncodeToString(headerData) + "." + base64.RawURLEncoding.EncodeToString(claimsData) + ".signature"
 }
