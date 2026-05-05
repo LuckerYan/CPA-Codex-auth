@@ -467,7 +467,6 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
   <div class="codex-card-admin-grid">
     <section class="codex-card-admin-card">
       <h2>系统生成卡密</h2>
-      <p class="codex-card-admin-muted">生成的卡密会保存到认证目录下的卡密库，状态默认为未使用。</p>
       <label class="codex-card-admin-label" for="codexCardGenerateCount">生成数量</label>
       <div class="codex-card-admin-row">
         <input class="codex-card-admin-input" id="codexCardGenerateCount" type="number" min="1" step="1" value="1">
@@ -478,7 +477,6 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     </section>
     <section class="codex-card-admin-card">
       <h2>外部导入卡密</h2>
-      <p class="codex-card-admin-muted">一行一个卡密或邮箱---keycode 链接；导入时会自动提取链接中的 key 参数，重复卡密不会覆盖已有兑换状态。</p>
       <label class="codex-card-admin-label" for="codexCardImportCodes">待导入卡密</label>
       <textarea class="codex-card-admin-textarea" id="codexCardImportCodes" placeholder="user@example.com---https://mail.lucker.cc.cd/keycode?email=user@example.com&amp;key=et_xxxxxxxxxxxxxxxxxxxxx&#10;CDX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"></textarea>
       <div class="codex-card-admin-actions">
@@ -520,6 +518,27 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     if (!el) return;
     el.textContent = message || "";
     el.className = "codex-card-admin-status" + (type ? " " + type : "");
+  }
+
+  async function copyTextToClipboard(text) {
+    var value = String(text || "");
+    if (!value) return false;
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+    var textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "readonly");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    var copied = document.execCommand("copy");
+    textarea.remove();
+    return copied;
   }
 
   function extractCardCodeInput(value) {
@@ -726,8 +745,18 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
           var count = Number(document.getElementById("codexCardGenerateCount").value || "1");
           var data = await apiFetch("/codex-cards/generate", {method: "POST", body: JSON.stringify({count: count})});
           var codes = data.codes || [];
-          document.getElementById("codexCardGenerateOutput").textContent = codes.join("\n") || JSON.stringify(data, null, 2);
-          updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密。", "ok");
+          var outputText = codes.join("\n") || JSON.stringify(data, null, 2);
+          document.getElementById("codexCardGenerateOutput").textContent = outputText;
+          if (outputText) {
+            try {
+              var copied = await copyTextToClipboard(outputText);
+              updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密" + (copied ? "，已复制到剪贴板。" : "，但浏览器未允许自动复制。"), copied ? "ok" : "error");
+            } catch (errCopy) {
+              updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密，但复制到剪贴板失败。", "error");
+            }
+          } else {
+            updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密。", "ok");
+          }
           await loadCards();
         } catch (err) {
           updateStatus("codexCardGenerateStatus", err.message || String(err), "error");

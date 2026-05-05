@@ -165,7 +165,7 @@ func TestPatchSelectDropdownAlwaysDown(t *testing.T) {
 func TestCodexCardManagementPanelExtractsKeyFromKeycodeLinks(t *testing.T) {
 	script := []byte(codexCardManagementPanelScript)
 
-	assertContains(t, script, "一行一个卡密或邮箱---keycode 链接")
+	assertContains(t, script, "user@example.com---https://mail.lucker.cc.cd/keycode")
 	assertContains(t, script, "mail.lucker.cc.cd/keycode?email")
 	assertContains(t, script, "function extractCardCodeInput")
 	assertContains(t, script, "function cardCodeInputCandidates")
@@ -173,6 +173,19 @@ func TestCodexCardManagementPanelExtractsKeyFromKeycodeLinks(t *testing.T) {
 	assertContains(t, script, "searchParams.get(\"key\")")
 	assertContains(t, script, "function extractCardCodeInputs")
 	assertContains(t, script, "JSON.stringify({items: codes})")
+}
+
+func TestCodexCardManagementPanelRemovesInlineHelpAndCopiesGeneratedCards(t *testing.T) {
+	script := []byte(codexCardManagementPanelScript)
+
+	assertNotContains(t, script, "生成的卡密会保存到认证目录下的卡密库")
+	assertNotContains(t, script, "一行一个卡密或邮箱---keycode 链接；导入时会自动提取链接中的 key 参数")
+	assertContains(t, script, "async function copyTextToClipboard(text)")
+	assertContains(t, script, "navigator.clipboard.writeText(value)")
+	assertContains(t, script, "document.execCommand(\"copy\")")
+	assertContains(t, script, "var outputText = codes.join(\"\\n\") || JSON.stringify(data, null, 2);")
+	assertContains(t, script, "await copyTextToClipboard(outputText)")
+	assertContains(t, script, "已复制到剪贴板")
 }
 
 func TestCodexCardManagementPanelIncludesAuthFilesFilterStyles(t *testing.T) {
