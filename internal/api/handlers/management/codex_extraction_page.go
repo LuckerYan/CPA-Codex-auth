@@ -94,13 +94,13 @@ const codexExtractionPageHTML = `<!doctype html>
     .format-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 13px; font-weight: 850; margin-bottom: 10px; }
     .format-heading small { color: var(--text-tertiary); font-size: 12px; font-weight: 650; }
     .format-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .format-card { position: relative; display: block; border: 1px solid var(--border); background: rgba(20,19,17,.68); border-radius: 14px; padding: 14px 15px; min-height: 92px; cursor: pointer; transition: border-color .16s, background .16s, transform .16s, box-shadow .16s; }
+    .format-card { position: relative; display: block; border: 1px solid var(--border); background: rgba(20,19,17,.68); border-radius: 14px; padding: 12px 15px; min-height: 64px; cursor: pointer; transition: border-color .16s, background .16s, transform .16s, box-shadow .16s; }
     .format-card:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.18); background: rgba(24,23,21,.88); }
     .format-card.active { border-color: rgba(185,240,110,.58); background: linear-gradient(135deg, rgba(255,243,77,.10), rgba(142,215,239,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
     .format-card input { position: absolute; opacity: 0; pointer-events: none; }
     .format-card .format-name { display: block; color: var(--text-primary); font-size: 14px; font-weight: 900; margin-bottom: 7px; }
     .format-card .format-desc { display: block; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; padding-right: 48px; }
-    .format-card.active::after { content: "已选择"; position: absolute; right: 12px; top: 12px; color: #1b1a16; background: linear-gradient(135deg, var(--accent-a), var(--accent-b)); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 900; }
+    .format-card.active::after { content: "已选择"; position: absolute; right: 12px; top: 10px; color: #1b1a16; background: linear-gradient(135deg, var(--accent-a), var(--accent-b)); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 900; }
     button { height: 54px; border: 1px solid rgba(255,255,255,.14); background: #f5f2ee; color: #171512; border-radius: 15px; cursor: pointer; padding: 0 26px; font: inherit; font-weight: 900; white-space: nowrap; transition: transform .16s, box-shadow .16s, opacity .16s; display: inline-flex; align-items: center; gap: 8px; letter-spacing: .01em; align-self: center; }
     button svg { width: 16px; height: 16px; }
     button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 32px rgba(245,242,238,.12); }
@@ -159,13 +159,11 @@ const codexExtractionPageHTML = `<!doctype html>
               <div class="format-options" role="radiogroup" aria-label="提取格式">
                 <label class="format-card active" data-format-card="cpa">
                   <input type="radio" name="extractFormat" value="cpa" checked>
-                  <span class="format-name">CPA 格式（当前）</span>
-                  <span class="format-desc">多个 Codex 认证 JSON 打包成 ZIP；每个账号保持独立文件。</span>
+                  <span class="format-name">CPA 格式</span>
                 </label>
                 <label class="format-card" data-format-card="sub">
                   <input type="radio" name="extractFormat" value="sub">
                   <span class="format-name">SUB 格式</span>
-                  <span class="format-desc">生成单个 sub2api-account JSON；多个账号合并在 accounts 数组内，不压缩。</span>
                 </label>
               </div>
             </div>
