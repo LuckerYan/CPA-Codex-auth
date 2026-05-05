@@ -109,6 +109,17 @@ const codexExtractionPageHTML = `<!doctype html>
     .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
     .status.ok { color: #86efac; }
     .status.error { color: var(--error); }
+    .progress-shell { position: fixed; left: 50%; top: 50%; bottom: auto; z-index: 30; width: min(calc(100vw - 36px), 680px); display: grid; gap: 10px; padding: 14px 16px 15px; border: 1px solid rgba(255,255,255,.14); border-radius: 18px; background: linear-gradient(180deg, rgba(31,29,26,.92), rgba(14,13,12,.88)); box-shadow: 0 28px 78px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(14px); pointer-events: none; transform: translate(-50%, -50%); }
+    .progress-shell[hidden] { display: none; }
+    .progress-shell::before { content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(185,240,110,.62), rgba(142,215,239,.32), transparent); }
+    .progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-tertiary); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .progress-meta .stage { color: var(--text-secondary); font-size: 13px; font-weight: 700; letter-spacing: .02em; text-transform: none; }
+    .progress-track { position: relative; height: 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.014)); overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 14px 30px rgba(0,0,0,.18); }
+    .progress-fill { position: absolute; inset: 1px auto 1px 1px; width: 0%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-a) 0%, var(--accent-b) 48%, var(--accent-c) 100%); box-shadow: 0 0 18px rgba(185,240,110,.24), 0 0 30px rgba(142,215,239,.10); transition: width .24s ease, background .24s ease, box-shadow .24s ease; overflow: hidden; }
+    .progress-fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 22%, rgba(255,255,255,.28) 42%, transparent 62%); transform: translateX(-60%); animation: progressShimmer 1.8s linear infinite; }
+    .progress-shell.success .progress-fill { background: linear-gradient(90deg, var(--accent-a) 0%, var(--accent-b) 48%, var(--accent-c) 100%); }
+    .progress-shell.error .progress-fill { background: linear-gradient(90deg, #ef9a8b 0%, #f4c76a 100%); box-shadow: 0 0 16px rgba(239,154,139,.18), 0 0 22px rgba(244,199,106,.10); }
+    @keyframes progressShimmer { from { transform: translateX(-60%); } to { transform: translateX(60%); } }
     .note { border: 1px solid var(--border); background: rgba(14,13,12,.48); color: var(--text-tertiary); border-radius: 14px; margin-top: 18px; padding: 14px 16px 14px 42px; font-size: 13px; line-height: 1.7; position: relative; }
     .note::before { content: "i"; position: absolute; left: 14px; top: 13px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,.18); display: grid; place-items: center; font-size: 11px; font-weight: 800; font-style: italic; color: var(--text-secondary); font-family: Georgia, serif; }
     .footer { padding: 18px clamp(20px, 5vw, 72px) 28px; color: var(--text-tertiary); font-size: 12px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -122,6 +133,7 @@ const codexExtractionPageHTML = `<!doctype html>
       .format-options { grid-template-columns: 1fr; }
       button { width: 100%; justify-content: center; }
       .panel::before { display: none; }
+      .progress-shell { top: 50%; bottom: auto; width: calc(100vw - 24px); border-radius: 16px; padding: 12px 13px 13px; }
       .footer { padding: 12px 18px 22px; }
     }
   </style>
@@ -177,6 +189,15 @@ const codexExtractionPageHTML = `<!doctype html>
         </div>
       </section>
     </main>
+    <div id="progressShell" class="progress-shell" hidden aria-live="polite" aria-atomic="true">
+      <div class="progress-meta">
+        <span id="progressStage" class="stage">等待提取开始</span>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div class="progress-track" role="progressbar" aria-label="提取进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
     <footer class="footer">
       <span class="left">© CODEX EXTRACT</span>
       <span class="right">Codex Auth Pipeline</span>
@@ -188,10 +209,95 @@ const codexExtractionPageHTML = `<!doctype html>
     var statusLine = document.getElementById('status');
     var formatInputs = document.querySelectorAll('input[name="extractFormat"]');
     var formatCards = document.querySelectorAll('[data-format-card]');
+    var progressShell = document.getElementById('progressShell');
+    var progressTrack = progressShell ? progressShell.querySelector('.progress-track') : null;
+    var progressFill = document.getElementById('progressFill');
+    var progressStage = document.getElementById('progressStage');
+    var progressPercent = document.getElementById('progressPercent');
+    var progressTimer = null;
+    var progressResetTimer = null;
+    var progressValue = 0;
+    var progressTarget = 0;
+    var buttonLabel = button.querySelector('span');
+    var buttonDefaultLabel = buttonLabel ? buttonLabel.textContent : '提取';
 
     function setStatus(message, type) {
       statusLine.textContent = message || '';
       statusLine.className = 'status' + (type ? ' ' + type : '');
+    }
+
+    function setButtonBusy(isBusy) {
+      if (buttonLabel) {
+        buttonLabel.textContent = isBusy ? '提取中…' : buttonDefaultLabel;
+      }
+      button.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+    }
+
+    function stopProgressTimers() {
+      if (progressTimer) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+      if (progressResetTimer) {
+        clearTimeout(progressResetTimer);
+        progressResetTimer = null;
+      }
+    }
+
+    function hideProgress() {
+      stopProgressTimers();
+      progressValue = 0;
+      progressTarget = 0;
+      if (progressShell && progressTrack && progressFill && progressStage && progressPercent) {
+        progressShell.hidden = true;
+        progressShell.className = 'progress-shell';
+        progressTrack.setAttribute('aria-valuenow', '0');
+        progressFill.style.width = '0%';
+        progressStage.textContent = '等待提取开始';
+        progressPercent.textContent = '0%';
+      }
+    }
+
+    function renderProgress(value, stage, variant) {
+      if (!(progressShell && progressTrack && progressFill && progressStage && progressPercent)) return;
+      var bounded = Math.max(0, Math.min(100, Math.round(value || 0)));
+      progressShell.hidden = false;
+      progressShell.className = 'progress-shell' + (variant ? ' ' + variant : '');
+      progressTrack.setAttribute('aria-valuenow', String(bounded));
+      progressFill.style.width = bounded + '%';
+      progressPercent.textContent = bounded + '%';
+      if (typeof stage === 'string') {
+        progressStage.textContent = stage;
+      }
+    }
+
+    function startProgress(totalCount, formatLabel) {
+      if (!(progressShell && progressTrack && progressFill && progressStage && progressPercent)) return;
+      stopProgressTimers();
+      progressValue = 8;
+      progressTarget = totalCount > 6 ? 82 : 88;
+      renderProgress(progressValue, totalCount > 1 ? '验活中 · ' + totalCount + ' 项 · 准备 ' + formatLabel + '…' : '验活中 · 准备 ' + formatLabel + '…', 'busy');
+      progressTimer = setInterval(function () {
+        if (progressValue >= progressTarget) return;
+        var step = progressValue < 30 ? 6 : progressValue < 70 ? 3 : 1;
+        if (totalCount > 3 && progressValue < 58) step += 1;
+        progressValue = Math.min(progressTarget, progressValue + step);
+        renderProgress(progressValue, undefined, 'busy');
+      }, 170);
+    }
+
+    function completeProgress(formatLabel) {
+      if (!(progressShell && progressTrack && progressFill && progressStage && progressPercent)) return;
+      stopProgressTimers();
+      renderProgress(100, formatLabel + ' 已完成', 'success');
+      progressResetTimer = setTimeout(hideProgress, 900);
+    }
+
+    function failProgress(message) {
+      if (!(progressShell && progressTrack && progressFill && progressStage && progressPercent)) return;
+      stopProgressTimers();
+      renderProgress(100, message || '提取失败', 'error');
+      progressResetTimer = setTimeout(hideProgress, 1400);
     }
 
     function filenameFromDisposition(value) {
@@ -298,9 +404,11 @@ const codexExtractionPageHTML = `<!doctype html>
         return;
       }
       button.disabled = true;
+      setButtonBusy(true);
       var format = getSelectedFormat();
       var formatLabel = format === 'sub' ? 'SUB JSON' : 'CPA ZIP';
       setStatus((codes.length > 1 ? '验活中（' + codes.length + '）' : '验活中') + ' · 准备 ' + formatLabel + '…', '');
+      startProgress(codes.length, formatLabel);
       try {
         var resp = await fetch('/v0/codex-extract', {
           method: 'POST',
@@ -315,11 +423,14 @@ const codexExtractionPageHTML = `<!doctype html>
         var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || defaultDownloadName(format, codes.length);
         downloadBlob(blob, filename);
         setStatus('提取成功 · ' + formatLabel + ' 已开始下载', 'ok');
+        completeProgress(formatLabel);
         input.value = '';
       } catch (err) {
         setStatus(err.message || String(err), 'error');
+        failProgress('提取失败');
       } finally {
         button.disabled = false;
+        setButtonBusy(false);
       }
     }
 
