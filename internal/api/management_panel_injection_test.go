@@ -188,6 +188,35 @@ func TestCodexCardManagementPanelRemovesInlineHelpAndCopiesGeneratedCards(t *tes
 	assertContains(t, script, "已复制到剪贴板")
 }
 
+func TestCodexCardManagementPanelCardListToolbarFiltersAndIconButtons(t *testing.T) {
+	script := []byte(codexCardManagementPanelScript)
+
+	assertContains(t, script, ".codex-card-admin-search{min-width:200px;flex:1 1 280px;max-width:340px}")
+	assertContains(t, script, "font-size:14px;font-weight:800")
+	assertContains(t, script, "class=\"codex-card-admin-bulk-spacer\"")
+	assertContains(t, script, "id=\"codexCardStatusFilter\"")
+	assertContains(t, script, "<option value=\"used\">已用</option>")
+	assertContains(t, script, "<option value=\"unused\">未用</option>")
+	assertContainsInOrder(t, script,
+		"id=\"codexCardSearchInput\"",
+		"id=\"codexCardSelectionStatus\"",
+		"class=\"codex-card-admin-bulk-spacer\"",
+		"id=\"codexCardStatusFilter\"",
+		"id=\"codexCardRefreshButton\"",
+	)
+	assertContains(t, script, "function selectedStatusFilter()")
+	assertContains(t, script, "function cardMatchesStatus(card, filter)")
+	assertContains(t, script, "statusFilter.addEventListener(\"change\", applyCardSearch)")
+	assertContains(t, script, "class=\"codex-card-admin-button secondary icon-only\" id=\"codexCardRefreshButton\"")
+	assertContains(t, script, "class=\"codex-card-admin-button secondary icon-only\" id=\"codexCardExportSelectedButton\"")
+	assertContains(t, script, "class=\"codex-card-admin-button danger icon-only\" id=\"codexCardDeleteSelectedButton\"")
+	assertNotContains(t, script, "codexCardExportAllButton")
+	assertNotContains(t, script, "导出全部")
+	assertNotContains(t, script, "id=\"codexCardRefreshButton\">刷新列表</button>")
+	assertNotContains(t, script, "id=\"codexCardExportSelectedButton\" disabled>导出选中</button>")
+	assertNotContains(t, script, "id=\"codexCardDeleteSelectedButton\" disabled>删除选中</button>")
+}
+
 func TestCodexCardManagementPanelIncludesAuthFilesFilterStyles(t *testing.T) {
 	script := []byte(codexCardManagementPanelScript)
 
@@ -265,5 +294,17 @@ func assertNotContains(t *testing.T, data []byte, want string) {
 	t.Helper()
 	if bytes.Contains(data, []byte(want)) {
 		t.Fatalf("patched data still contains %q", want)
+	}
+}
+
+func assertContainsInOrder(t *testing.T, data []byte, wants ...string) {
+	t.Helper()
+	offset := 0
+	for _, want := range wants {
+		idx := bytes.Index(data[offset:], []byte(want))
+		if idx < 0 {
+			t.Fatalf("patched data does not contain %q after offset %d", want, offset)
+		}
+		offset += idx + len(want)
 	}
 }

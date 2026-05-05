@@ -195,6 +195,7 @@ const codexCardManagementPanelScript = `
     style.textContent = ` + "`" + `
 .codex-card-admin-page{width:100%;max-width:1120px;margin:0 auto;color:var(--text-primary);position:relative}
 .codex-card-admin-page *{box-sizing:border-box}
+.codex-card-admin-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){display:none!important}
 .codex-card-admin-page-header{margin:0 0 24px}
 .codex-card-admin-title{color:var(--text-primary);letter-spacing:-.02em;margin:0 0 12px;font-size:32px;font-weight:800;line-height:1.25}
@@ -242,13 +243,19 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-pill.redeemed{color:var(--text-secondary);background:color-mix(in srgb,var(--text-secondary) 10%,transparent)}
 .codex-card-admin-empty{color:var(--text-secondary);padding:26px;text-align:center}
 .codex-card-admin-link{color:var(--text-primary);text-decoration:none;border-bottom:1px solid var(--border-color)}
-.codex-card-admin-bulkbar{border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:14px;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 14px;padding:14px;display:flex;flex-wrap:wrap}
-.codex-card-admin-search{min-width:260px;flex:1 1 360px}
+.codex-card-admin-bulkbar{border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:14px;align-items:center;justify-content:flex-start;gap:12px;margin:14px 0 14px;padding:14px;display:flex;flex-wrap:wrap}
+.codex-card-admin-search{min-width:200px;flex:1 1 280px;max-width:340px}
 .codex-card-admin-search .codex-card-admin-input{height:40px}
+.codex-card-admin-filter{position:relative;min-width:150px;flex:0 0 150px}
+.codex-card-admin-filter .codex-card-admin-input{height:40px;padding-right:36px;appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;font-size:14px;font-weight:800;line-height:1.2}
+.codex-card-admin-filter::after{content:"";position:absolute;right:14px;top:50%;width:12px;height:12px;pointer-events:none;background:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22M3 4.75 6 7.75 9 4.75%22 stroke=%22%238b8680%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E') center/12px 12px no-repeat;transform:translateY(-50%);opacity:.85}
 .codex-card-admin-checklabel{color:var(--text-secondary);align-items:center;gap:9px;font-size:13px;font-weight:800;display:inline-flex;cursor:pointer}
-.codex-card-admin-selection{color:var(--text-secondary);font-size:13px;font-weight:700}
-.codex-card-admin-bulk-actions{align-items:center;justify-content:flex-end;gap:8px;display:flex;flex:0 0 auto;flex-wrap:wrap}
+.codex-card-admin-selection{color:var(--text-secondary);font-size:13px;font-weight:700;white-space:nowrap;flex:0 0 auto}
+.codex-card-admin-bulk-spacer{min-width:16px;flex:1 1 auto}
+.codex-card-admin-bulk-actions{align-items:center;justify-content:flex-end;gap:8px;display:flex;flex:0 0 auto;flex-wrap:nowrap}
 .codex-card-admin-bulk-actions .codex-card-admin-button{min-height:36px;padding:8px 12px;font-size:13px}
+.codex-card-admin-bulk-actions .codex-card-admin-button.icon-only{width:40px;min-width:40px;min-height:40px;padding:0;gap:0;flex:0 0 auto}
+.codex-card-admin-bulk-actions .codex-card-admin-button.icon-only svg{width:17px;height:17px;display:block}
 .AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:minmax(220px,380px) minmax(86px,132px) minmax(132px,210px) minmax(144px,168px)!important;justify-content:start}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o{width:100%;max-width:100%}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(1){max-width:380px}
@@ -276,7 +283,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .auth-files-display-options-list label[class*="ToggleSwitch-module__root"] [class*="ToggleSwitch-module__label"]{color:var(--text-primary);font-size:13px;font-weight:700;line-height:1.35}
 .auth-file-card-quota-refresh-button{min-height:30px!important;height:30px!important;border-radius:8px!important;padding:0 8px!important;font-size:12px!important;font-weight:800!important;gap:0!important;white-space:nowrap}
 .auth-file-card-quota-refresh-button svg{width:14px;height:14px}
-@media (max-width:900px){.codex-card-admin-grid,.codex-card-admin-stats{grid-template-columns:1fr}.codex-card-admin-row,.codex-card-admin-list-head{align-items:stretch;flex-direction:column}.codex-card-admin-bulkbar{align-items:stretch;flex-direction:column}.codex-card-admin-search{min-width:0;flex:auto}.codex-card-admin-bulk-actions{align-items:stretch;flex-direction:column}.codex-card-admin-bulk-actions .codex-card-admin-button{width:100%}}
+@media (max-width:900px){.codex-card-admin-grid,.codex-card-admin-stats{grid-template-columns:1fr}.codex-card-admin-row,.codex-card-admin-list-head{align-items:stretch;flex-direction:column}.codex-card-admin-bulkbar{align-items:stretch;flex-direction:column}.codex-card-admin-search{min-width:0;max-width:none;flex:auto}.codex-card-admin-selection{align-self:flex-start}.codex-card-admin-bulk-spacer{display:none}.codex-card-admin-filter{width:100%;min-width:0;flex:auto}.codex-card-admin-bulk-actions{align-items:stretch;flex-direction:column}.codex-card-admin-bulk-actions .codex-card-admin-button{width:100%}}
 @media (max-width:768px){.AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:1fr!important}.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o,.auth-files-display-options-menu{max-width:none}.auth-files-display-options-list{left:0;right:auto;width:100%;min-width:0}}
 ` + "`" + `;
     document.head.appendChild(style);
@@ -497,11 +504,25 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
           <input class="codex-card-admin-input" id="codexCardSearchInput" type="search" placeholder="搜索卡密、状态、来源或兑换文件">
         </div>
         <span class="codex-card-admin-selection" id="codexCardSelectionStatus">已选择 0 个</span>
+        <span class="codex-card-admin-bulk-spacer" aria-hidden="true"></span>
+        <div class="codex-card-admin-filter">
+          <label class="codex-card-admin-sr-only" for="codexCardStatusFilter">筛选状态</label>
+          <select class="codex-card-admin-input" id="codexCardStatusFilter" aria-label="筛选状态">
+            <option value="all" selected>全部状态</option>
+            <option value="used">已用</option>
+            <option value="unused">未用</option>
+          </select>
+        </div>
         <div class="codex-card-admin-bulk-actions">
-          <button class="codex-card-admin-button secondary" id="codexCardRefreshButton">刷新列表</button>
-          <button class="codex-card-admin-button secondary" id="codexCardExportSelectedButton" disabled>导出选中</button>
-          <button class="codex-card-admin-button secondary" id="codexCardExportAllButton">导出全部</button>
-          <button class="codex-card-admin-button danger" id="codexCardDeleteSelectedButton" disabled>删除选中</button>
+          <button class="codex-card-admin-button secondary icon-only" id="codexCardRefreshButton" type="button" title="刷新列表" aria-label="刷新列表">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
+          <button class="codex-card-admin-button secondary icon-only" id="codexCardExportSelectedButton" type="button" disabled title="导出选中" aria-label="导出选中">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+          </button>
+          <button class="codex-card-admin-button danger icon-only" id="codexCardDeleteSelectedButton" type="button" disabled title="删除选中" aria-label="删除选中">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M6 6l1 14h10l1-14"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+          </button>
         </div>
       </div>
       <div class="codex-card-admin-status" id="codexCardListStatus"></div>
@@ -618,11 +639,32 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     return haystack.indexOf(query) >= 0;
   }
 
+  function selectedStatusFilter() {
+    var select = document.getElementById("codexCardStatusFilter");
+    if (!select) return "all";
+    return String(select.value || "all").trim().toLowerCase() || "all";
+  }
+
+  function cardMatchesStatus(card, filter) {
+    var normalized = String(filter || "all").trim().toLowerCase();
+    if (!normalized || normalized === "all") return true;
+    if (!card) return false;
+    var status = String(card.status || "").trim().toLowerCase();
+    if (normalized === "used") {
+      return status !== "unused";
+    }
+    if (normalized === "unused") {
+      return status === "unused";
+    }
+    return true;
+  }
+
   function filteredCards() {
     var input = document.getElementById("codexCardSearchInput");
     var query = input ? String(input.value || "").trim().toLowerCase() : "";
+    var statusFilter = selectedStatusFilter();
     return (allCards || []).filter(function (card) {
-      return cardMatchesSearch(card, query);
+      return cardMatchesSearch(card, query) && cardMatchesStatus(card, statusFilter);
     });
   }
 
@@ -636,7 +678,12 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     currentCards = Array.isArray(cards) ? cards : [];
     if (!cards || cards.length === 0) {
       var searchInput = document.getElementById("codexCardSearchInput");
-      var message = searchInput && searchInput.value.trim() ? "没有匹配的卡密，请换个关键词。" : "还没有卡密，先生成或导入一批。";
+      var statusFilter = selectedStatusFilter();
+      var message = searchInput && searchInput.value.trim()
+        ? "没有匹配的卡密，请换个关键词。"
+        : statusFilter !== "all"
+          ? "当前筛选条件下没有卡密。"
+          : "还没有卡密，先生成或导入一批。";
       wrap.innerHTML = '<div class="codex-card-admin-empty">' + escapeHTML(message) + '</div>';
       updateSelectionControls();
       return;
@@ -679,8 +726,6 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       checkbox.indeterminate = selected > 0 && selected < total;
       checkbox.disabled = total === 0;
     });
-    var exportAll = document.getElementById("codexCardExportAllButton");
-    if (exportAll) exportAll.disabled = allCards.length === 0;
   }
 
   function bindTableSelection() {
@@ -708,16 +753,16 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     }
   }
 
-  async function exportCards(all) {
+  async function exportSelectedCards() {
     var codes = selectedCardCodes();
-    if (!all && codes.length === 0) {
+    if (codes.length === 0) {
       updateStatus("codexCardListStatus", "请先勾选要导出的卡密。", "error");
       return;
     }
-    updateStatus("codexCardListStatus", all ? "正在导出全部卡密..." : "正在导出选中卡密...", "");
-    var data = await apiDownload("/codex-cards/export", {method: "POST", body: JSON.stringify(all ? {all: true} : {items: codes})});
+    updateStatus("codexCardListStatus", "正在导出选中卡密...", "");
+    var data = await apiDownload("/codex-cards/export", {method: "POST", body: JSON.stringify({items: codes})});
     saveBlob(data.blob, data.filename);
-    updateStatus("codexCardListStatus", all ? "全部卡密已导出。" : "已导出 " + codes.length + " 个选中卡密。", "ok");
+    updateStatus("codexCardListStatus", "已导出 " + codes.length + " 个选中卡密。", "ok");
   }
 
   async function deleteSelectedCards() {
@@ -794,25 +839,16 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     if (searchInput) {
       searchInput.addEventListener("input", applyCardSearch);
     }
+    var statusFilter = document.getElementById("codexCardStatusFilter");
+    if (statusFilter) {
+      statusFilter.addEventListener("change", applyCardSearch);
+    }
     var exportSelectedButton = document.getElementById("codexCardExportSelectedButton");
     if (exportSelectedButton) {
       exportSelectedButton.addEventListener("click", async function () {
         exportSelectedButton.disabled = true;
         try {
-          await exportCards(false);
-        } catch (err) {
-          updateStatus("codexCardListStatus", err.message || String(err), "error");
-        } finally {
-          updateSelectionControls();
-        }
-      });
-    }
-    var exportAllButton = document.getElementById("codexCardExportAllButton");
-    if (exportAllButton) {
-      exportAllButton.addEventListener("click", async function () {
-        exportAllButton.disabled = true;
-        try {
-          await exportCards(true);
+          await exportSelectedCards();
         } catch (err) {
           updateStatus("codexCardListStatus", err.message || String(err), "error");
         } finally {
