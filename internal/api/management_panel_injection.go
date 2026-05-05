@@ -98,7 +98,7 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "let i=await Promise.all(n.map(async n=>{try{let r=await e.fetchQuota(n,t);return{name:n.name,status:`success`,data:r}}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);return{name:n.name,status:`error`,error:r,errorStatus:i}}}));if(c!==a.current)return;r(n=>{let r={...n};return i.forEach(n=>{n.status===`success`?r[n.name]=e.buildSuccessState(n.data):r[n.name]=e.buildErrorState(n.error||t(`common.unknown_error`),n.errorStatus)}),r})",
-			new: "let u=0,d=Math.max(1,Math.min(3,Math.floor(Number(window.__CPA_QUOTA_REFRESH_CONCURRENCY)||3))),f=async()=>{for(;;){let i=u++;if(i>=n.length)return;let o=n[i];try{let n=await e.fetchQuota(o,t);c===a.current&&r(t=>({...t,[o.name]:e.buildSuccessState(n)}))}catch(n){let i=n instanceof Error?n.message:t(`common.unknown_error`),s=Ry(n);c===a.current&&r(t=>({...t,[o.name]:e.buildErrorState(i,s)}))}}};await Promise.all(Array.from({length:Math.min(d,n.length)},()=>f()))",
+			new: "let u=0,d=Math.max(1,Math.min(10,Math.floor(Number(window.__CPA_QUOTA_REFRESH_CONCURRENCY)||10))),f=async()=>{for(;;){let i=u++;if(i>=n.length)return;let o=n[i];try{let n=await e.fetchQuota(o,t);c===a.current&&r(t=>({...t,[o.name]:e.buildSuccessState(n)}))}catch(n){let i=n instanceof Error?n.message:t(`common.unknown_error`),s=Ry(n);c===a.current&&r(t=>({...t,[o.name]:e.buildErrorState(i,s)}))}}};await Promise.all(Array.from({length:Math.min(d,n.length)},()=>f()))",
 		},
 		{
 			old: "finally{c===a.current&&(s(!1),i.current=!1)}}",

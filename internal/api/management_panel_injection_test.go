@@ -36,7 +36,8 @@ func TestPatchQuotaManagementPanelThrottlesRefreshAll(t *testing.T) {
 	patched := patchQuotaManagementPanel(input)
 
 	assertContains(t, patched, "window.__CPA_QUOTA_REFRESH_CONCURRENCY")
-	assertContains(t, patched, "Math.min(3")
+	assertContains(t, patched, "Math.max(1,Math.min(10")
+	assertContains(t, patched, "||10")
 	assertContains(t, patched, "Array.from({length:Math.min(d,n.length)},()=>f())")
 	assertContains(t, patched, "c===a.current&&r(t=>({...t,[o.name]:e.buildSuccessState(n)}))")
 	assertNotContains(t, patched, "Promise.all(n.map(async n=>")
