@@ -71,6 +71,7 @@ const codexExtractionPageHTML = `<!doctype html>
     @keyframes pulse { 0%,100% { box-shadow: 0 0 0 5px rgba(16,185,129,.12); } 50% { box-shadow: 0 0 0 8px rgba(16,185,129,.04); } }
     .center { display: grid; place-items: center; padding: 8px clamp(18px, 5vw, 72px) 48px; }
     .panel { width: min(100%, 960px); border: 1px solid var(--border); background: rgba(20,19,17,.82); border-radius: 24px; box-shadow: 0 34px 120px rgba(0,0,0,.42); overflow: hidden; position: relative; backdrop-filter: blur(8px); }
+    .center .panel { transform: translateY(clamp(-30px, -2.2vw, -18px)); }
     .panel::before { content: "EXTRACT"; position: absolute; right: 34px; top: 38px; color: rgba(255,255,255,.035); font-size: clamp(54px, 12vw, 132px); line-height: .8; font-weight: 950; letter-spacing: -.09em; pointer-events: none; }
     .panel::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); }
     .hero { padding: clamp(28px, 5.5vw, 54px) clamp(26px, 6vw, 64px) 24px; position: relative; }
@@ -133,6 +134,7 @@ const codexExtractionPageHTML = `<!doctype html>
       .format-options { grid-template-columns: 1fr; }
       button { width: 100%; justify-content: center; }
       .panel::before { display: none; }
+      .center .panel { transform: none; }
       .progress-shell { top: 50%; bottom: auto; width: calc(100vw - 24px); border-radius: 16px; padding: 12px 13px 13px; }
       .footer { padding: 12px 18px 22px; }
     }

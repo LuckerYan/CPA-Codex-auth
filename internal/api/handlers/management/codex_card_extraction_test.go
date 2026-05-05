@@ -154,6 +154,35 @@ func (e *fakeCodexValidationExecutor) HttpRequest(ctx context.Context, auth *cor
 	}, nil
 }
 
+func TestSummarizeCodexCardsIncludesRedeemedToday(t *testing.T) {
+	loc := time.FixedZone("CST", 8*60*60)
+	now := time.Date(2026, 5, 6, 10, 0, 0, 0, loc)
+	redeemedToday := time.Date(2026, 5, 5, 17, 30, 0, 0, time.UTC)
+	redeemedYesterday := time.Date(2026, 5, 5, 15, 30, 0, 0, time.UTC)
+	cards := []*codexCardRecord{
+		{Status: codexCardStatusUnused},
+		{Status: codexCardStatusRedeemed, RedeemedAt: &redeemedToday},
+		{Status: codexCardStatusRedeemed, RedeemedAt: &redeemedYesterday},
+		{Status: codexCardStatusRedeemed},
+		{Status: codexCardStatusDisabled},
+	}
+
+	summary := summarizeCodexCards(cards, now)
+
+	want := map[string]int{
+		"total":          5,
+		"unused":         1,
+		"redeemed":       3,
+		"redeemed_today": 1,
+		"disabled":       1,
+	}
+	for key, expected := range want {
+		if summary[key] != expected {
+			t.Fatalf("summary[%s] = %d, want %d (summary=%+v)", key, summary[key], expected, summary)
+		}
+	}
+}
+
 func TestValidateCodexAuthCandidatesBansInvalidatedQuotaAuth(t *testing.T) {
 	manager := coreauth.NewManager(nil, nil, nil)
 	executor := &fakeCodexValidationExecutor{invalid: map[string]bool{"bad.json": true}}

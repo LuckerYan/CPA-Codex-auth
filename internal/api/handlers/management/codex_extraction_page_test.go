@@ -28,6 +28,8 @@ func TestCodexExtractionPageSupportsBatchCodes(t *testing.T) {
 	assertCodexExtractionPageContains(t, "function getSelectedFormat()")
 	assertCodexExtractionPageContains(t, "input[name=\"extractFormat\"]")
 	assertCodexExtractionPageContains(t, "JSON.stringify({ items: codes, format: format })")
+	assertCodexExtractionPageContains(t, ".center .panel { transform: translateY(clamp(-30px, -2.2vw, -18px)); }")
+	assertCodexExtractionPageContains(t, ".center .panel { transform: none; }")
 	assertCodexExtractionPageContains(t, "id=\"progressShell\"")
 	assertCodexExtractionPageContains(t, "role=\"progressbar\"")
 	assertCodexExtractionPageContains(t, ".progress-shell { position: fixed;")

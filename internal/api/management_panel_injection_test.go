@@ -217,6 +217,22 @@ func TestCodexCardManagementPanelCardListToolbarFiltersAndIconButtons(t *testing
 	assertNotContains(t, script, "id=\"codexCardDeleteSelectedButton\" disabled>删除选中</button>")
 }
 
+func TestCodexCardManagementPanelStatsShowTotalAndTodayExtraction(t *testing.T) {
+	script := []byte(codexCardManagementPanelScript)
+
+	assertContains(t, script, "function countRedeemedToday(cards)")
+	assertContains(t, script, "card.redeemed_at || card.redeemedAt")
+	assertContains(t, script, "values.redeemed_today != null")
+	assertContains(t, script, "codex-card-admin-stat-label\">总提取</div>")
+	assertContains(t, script, "codex-card-admin-stat-label\">今提取</div>")
+	assertContains(t, script, "[\"redeemed\", \"总提取\", values.redeemed]")
+	assertContains(t, script, "[\"redeemed_today\", \"今提取\", redeemedToday]")
+	assertContains(t, script, "renderStats(data.summary || {}, allCards)")
+	assertNotContains(t, script, "[\"redeemed\", \"已提取\"]")
+	assertNotContains(t, script, "[\"disabled\", \"已禁用\"]")
+	assertNotContains(t, script, "codex-card-admin-stat-label\">已禁用</div>")
+}
+
 func TestCodexCardManagementPanelIncludesAuthFilesFilterStyles(t *testing.T) {
 	script := []byte(codexCardManagementPanelScript)
 

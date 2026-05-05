@@ -468,8 +468,8 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
   <section class="codex-card-admin-stats" id="codexCardStats">
     <div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">-</div><div class="codex-card-admin-stat-label">总卡密</div></div>
     <div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">-</div><div class="codex-card-admin-stat-label">未使用</div></div>
-    <div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">-</div><div class="codex-card-admin-stat-label">已提取</div></div>
-    <div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">-</div><div class="codex-card-admin-stat-label">已禁用</div></div>
+    <div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">-</div><div class="codex-card-admin-stat-label">总提取</div></div>
+    <div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">-</div><div class="codex-card-admin-stat-label">今提取</div></div>
   </section>
   <div class="codex-card-admin-grid">
     <section class="codex-card-admin-card">
@@ -610,17 +610,44 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       .filter(Boolean);
   }
 
-  function renderStats(summary) {
+  function cardRedeemedAtValue(card) {
+    if (!card) return "";
+    return card.redeemed_at || card.redeemedAt || "";
+  }
+
+  function localDateKey(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function countRedeemedToday(cards) {
+    var todayKey = localDateKey(new Date());
+    if (!todayKey || !Array.isArray(cards)) return 0;
+    return cards.filter(function (card) {
+      if (!card || String(card.status || "").trim().toLowerCase() !== "redeemed") return false;
+      return localDateKey(cardRedeemedAtValue(card)) === todayKey;
+    }).length;
+  }
+
+  function renderStats(summary, cards) {
     var root = document.getElementById("codexCardStats");
     if (!root) return;
+    var values = summary || {};
+    var redeemedToday = values.redeemed_today != null
+      ? values.redeemed_today
+      : values.today_redeemed != null
+        ? values.today_redeemed
+        : countRedeemedToday(cards);
     var items = [
-      ["total", "总卡密"],
-      ["unused", "未使用"],
-      ["redeemed", "已提取"],
-      ["disabled", "已禁用"]
+      ["total", "总卡密", values.total],
+      ["unused", "未使用", values.unused],
+      ["redeemed", "总提取", values.redeemed],
+      ["redeemed_today", "今提取", redeemedToday]
     ];
     root.innerHTML = items.map(function (item) {
-      return '<div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">' + escapeHTML(summary && summary[item[0]] || 0) + '</div><div class="codex-card-admin-stat-label">' + item[1] + '</div></div>';
+      return '<div class="codex-card-admin-stat"><div class="codex-card-admin-stat-value">' + escapeHTML(item[2] || 0) + '</div><div class="codex-card-admin-stat-label">' + item[1] + '</div></div>';
     }).join("");
   }
 
@@ -745,7 +772,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     try {
       var data = await apiFetch("/codex-cards", {method: "GET", headers: {}});
       allCards = Array.isArray(data.cards) ? data.cards : [];
-      renderStats(data.summary || {});
+      renderStats(data.summary || {}, allCards);
       renderTable(filteredCards());
       updateStatus("codexCardListStatus", "卡密列表已刷新。", "ok");
     } catch (err) {

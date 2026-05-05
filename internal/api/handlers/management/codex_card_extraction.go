@@ -1052,11 +1052,25 @@ func (h *Handler) ListCodexCards(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	summary := summarizeCodexCards(cards, time.Now())
+	c.JSON(http.StatusOK, codexCardListResponse{
+		Status:  "ok",
+		Total:   len(cards),
+		Summary: summary,
+		Cards:   cards,
+	})
+}
+
+func summarizeCodexCards(cards []*codexCardRecord, now time.Time) map[string]int {
+	if now.IsZero() {
+		now = time.Now()
+	}
 	summary := map[string]int{
-		"total":    len(cards),
-		"unused":   0,
-		"redeemed": 0,
-		"disabled": 0,
+		"total":          len(cards),
+		"unused":         0,
+		"redeemed":       0,
+		"redeemed_today": 0,
+		"disabled":       0,
 	}
 	for _, card := range cards {
 		if card == nil {
@@ -1065,18 +1079,26 @@ func (h *Handler) ListCodexCards(c *gin.Context) {
 		switch strings.ToLower(strings.TrimSpace(card.Status)) {
 		case codexCardStatusRedeemed:
 			summary["redeemed"]++
+			if codexCardRedeemedOnSameDay(card.RedeemedAt, now) {
+				summary["redeemed_today"]++
+			}
 		case codexCardStatusDisabled:
 			summary["disabled"]++
 		default:
 			summary["unused"]++
 		}
 	}
-	c.JSON(http.StatusOK, codexCardListResponse{
-		Status:  "ok",
-		Total:   len(cards),
-		Summary: summary,
-		Cards:   cards,
-	})
+	return summary
+}
+
+func codexCardRedeemedOnSameDay(redeemedAt *time.Time, now time.Time) bool {
+	if redeemedAt == nil || redeemedAt.IsZero() || now.IsZero() {
+		return false
+	}
+	loc := now.Location()
+	ny, nm, nd := now.In(loc).Date()
+	ry, rm, rd := redeemedAt.In(loc).Date()
+	return ny == ry && nm == rm && nd == rd
 }
 
 func (h *Handler) ImportCodexCards(c *gin.Context) {
