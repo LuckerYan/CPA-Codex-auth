@@ -66,6 +66,30 @@ func TestPatchAuthFilesPageRefreshesAfterQuotaUpdateEvent(t *testing.T) {
 	assertContains(t, patched, "(0,y.useEffect)(()=>{a&&(ce(),Oe(),ke())},[a,ce,Oe,ke])")
 }
 
+func TestPatchAuthFilesSelectedQuotaRefreshButton(t *testing.T) {
+	input := []byte(
+		"function _x(){let{t:e}=qo(),{showNotification:t,showConfirmation:n}=hc(),[r,i]=(0,y.useState)([])," +
+			"handleStatusToggle:F,toggleSelect:T,selectAllVisible:E,invertVisibleSelection:D,deselectAll:O,batchDownload:(0,y.useCallback)(async n=>{" +
+			"batchDownload:ye,batchSetStatus:be,batchDelete:xe}=_x()," +
+			"children:[(0,B.jsx)(V,{variant:`secondary`,size:`sm`,onClick:()=>void ye(xt),disabled:Qe||xt.length===0,children:e(`auth_files.batch_download`)}),",
+	)
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "refreshSelectedQuotaSetter=np(e=>e.setCodexQuota)")
+	assertContains(t, patched, "batchRefreshQuota:(0,y.useCallback)")
+	assertContains(t, patched, "Xb(`codex`)")
+	assertContains(t, patched, "window.__CPA_QUOTA_REFRESH_CONCURRENCY")
+	assertContains(t, patched, "selected-quota-refresh")
+	assertContains(t, patched, "batchRefreshQuota:refreshSelectedQuota")
+	assertContains(t, patched, "onClick:()=>void refreshSelectedQuota(xt)")
+	assertContains(t, patched, "children:`刷新额度`")
+	assertContainsInOrder(t, patched,
+		"children:`刷新额度`",
+		"children:e(`auth_files.batch_download`)",
+	)
+}
+
 func TestPatchAuthFilesUploadResponseIncludesDuplicateCount(t *testing.T) {
 	input := []byte("Bh=e=>Array.isArray(e)?zh(e.map(e=>String(e??``))):[],Vh=e=>Array.isArray(e)?e.reduce((e,t)=>{if(!t||typeof t!=`object`)return e;let n=t,r=String(n.name??``).trim(),i=typeof n.error==`string`?n.error.trim():typeof n.message==`string`?n.message.trim():``;return!r&&!i||e.push({name:r,error:i||`Unknown error`}),e},[]):[],Hh=(e,t)=>{let n=new Set(t.map(e=>e.name.trim()).filter(Boolean));return n.size===0?[...e]:e.filter(e=>!n.has(e))},Uh=(e,t)=>{let n=Vh(e?.failed),r=Bh(e?.files),i=typeof e?.uploaded==`number`?e.uploaded:r.length>0?r.length:+(t.length===1&&n.length===0),a=r;if(a.length===0&&i>0)if(n.length===0&&i===t.length)a=[...t];else{let e=Hh(t,n);e.length===i&&(a=e)}return{status:typeof e?.status==`string`?e.status:n.length>0?`partial`:`ok`,uploaded:i,files:a,failed:n}},Wh=")
 
