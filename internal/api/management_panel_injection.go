@@ -227,12 +227,14 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-output{white-space:pre-wrap;word-break:break-word;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);border-radius:12px;max-height:280px;min-height:90px;margin:14px 0 0;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace;font-size:12.5px;line-height:1.55;overflow:auto}
 .codex-card-admin-list-head{align-items:flex-start;justify-content:space-between;gap:16px;display:flex}
 .codex-card-admin-list-head-text{min-width:0}
-.codex-card-admin-table-wrap{border:1px solid var(--border-color);border-radius:14px;overflow:hidden}
-.codex-card-admin-table{width:100%;border-collapse:collapse;font-size:13px}
+.codex-card-admin-table-wrap{border:1px solid var(--border-color);border-radius:14px;overflow:auto}
+.codex-card-admin-table{width:100%;min-width:1080px;border-collapse:collapse;font-size:13px}
 .codex-card-admin-table th,.codex-card-admin-table td{border-bottom:1px solid var(--border-color);padding:11px 12px;text-align:left;vertical-align:top}
 .codex-card-admin-table th{color:var(--text-secondary);background:color-mix(in srgb,var(--bg-tertiary) 78%,transparent);font-size:12px;font-weight:800}
 .codex-card-admin-table tr:last-child td{border-bottom:0}
 .codex-card-admin-table th.select,.codex-card-admin-table td.select{width:48px;text-align:center;vertical-align:middle}
+.codex-card-admin-table th.time,.codex-card-admin-table td.time{min-width:142px;white-space:nowrap}
+.codex-card-admin-table th.file,.codex-card-admin-table td.file{min-width:150px}
 .codex-card-admin-checkbox{appearance:none;width:17px;height:17px;margin:0;border:1px solid var(--border-color);background:var(--bg-primary);border-radius:5px;cursor:pointer;display:inline-grid;place-content:center;transition:background .15s,border-color .15s,box-shadow .15s}
 .codex-card-admin-checkbox:checked{background:var(--primary-color);border-color:var(--primary-color)}
 .codex-card-admin-checkbox:checked:after{content:"";width:8px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
@@ -244,8 +246,9 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-empty{color:var(--text-secondary);padding:26px;text-align:center}
 .codex-card-admin-link{color:var(--text-primary);text-decoration:none;border-bottom:1px solid var(--border-color)}
 .codex-card-admin-bulkbar{border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:14px;align-items:center;justify-content:flex-start;gap:12px;margin:14px 0 14px;padding:14px;display:flex;flex-wrap:wrap}
-.codex-card-admin-search{min-width:200px;flex:1 1 280px;max-width:340px}
+.codex-card-admin-search{min-width:260px;flex:1 1 420px;max-width:520px}
 .codex-card-admin-search .codex-card-admin-input{height:40px}
+.codex-card-admin-search .codex-card-admin-search-textarea{height:48px;min-height:48px;max-height:118px;resize:vertical;line-height:1.35;white-space:pre-wrap}
 .codex-card-admin-filter{position:relative;min-width:150px;flex:0 0 150px}
 .codex-card-admin-filter .codex-card-admin-input{height:40px;padding-right:36px;appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;font-size:14px;font-weight:800;line-height:1.2}
 .codex-card-admin-filter::after{content:"";position:absolute;right:14px;top:50%;width:12px;height:12px;pointer-events:none;background:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22M3 4.75 6 7.75 9 4.75%22 stroke=%22%238b8680%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E') center/12px 12px no-repeat;transform:translateY(-50%);opacity:.85}
@@ -501,7 +504,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       </div>
       <div class="codex-card-admin-bulkbar">
         <div class="codex-card-admin-search">
-          <input class="codex-card-admin-input" id="codexCardSearchInput" type="search" placeholder="搜索卡密、状态、来源或兑换文件">
+          <textarea class="codex-card-admin-input codex-card-admin-search-textarea" id="codexCardSearchInput" rows="2" placeholder="搜索卡密、状态、来源、提取时间或兑换文件&#10;批量搜索：一行一个卡密"></textarea>
         </div>
         <span class="codex-card-admin-selection" id="codexCardSelectionStatus">已选择 0 个</span>
         <span class="codex-card-admin-bulk-spacer" aria-hidden="true"></span>
@@ -651,19 +654,53 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     }).join("");
   }
 
-  function cardMatchesSearch(card, query) {
-    if (!query) return true;
-    if (!card) return false;
-    var haystack = [
+  function parseCardSearch(value) {
+    var raw = String(value || "");
+    var normalized = raw
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
+    var terms = normalized
+      .split("\n")
+      .map(extractCardCodeInput)
+      .map(function (item) {
+        return String(item || "").trim().toLowerCase();
+      })
+      .filter(Boolean);
+    return {
+      raw: normalized.trim().toLowerCase(),
+      terms: terms,
+      batch: normalized.indexOf("\n") >= 0
+    };
+  }
+
+  function cardSearchHaystack(card) {
+    var redeemedAt = cardRedeemedAtValue(card);
+    return [
       card.code,
       card.status,
       card.source,
       card.created_at,
+      formatDate(card.created_at),
+      redeemedAt,
+      formatDate(redeemedAt),
       card.redeemed_file,
       card.redeemed_auth_id,
       card.note
     ].join(" ").toLowerCase();
-    return haystack.indexOf(query) >= 0;
+  }
+
+  function cardMatchesSearch(card, search) {
+    if (!search || (!search.raw && (!search.terms || search.terms.length === 0))) return true;
+    if (!card) return false;
+    var code = String(card.code || "").trim().toLowerCase();
+    var terms = search.terms || [];
+    if (search.batch && terms.length > 0) {
+      return terms.some(function (term) {
+        return code === term;
+      });
+    }
+    if (terms.length === 1 && code === terms[0]) return true;
+    return cardSearchHaystack(card).indexOf(search.raw) >= 0;
   }
 
   function selectedStatusFilter() {
@@ -688,10 +725,10 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 
   function filteredCards() {
     var input = document.getElementById("codexCardSearchInput");
-    var query = input ? String(input.value || "").trim().toLowerCase() : "";
+    var search = parseCardSearch(input ? input.value : "");
     var statusFilter = selectedStatusFilter();
     return (allCards || []).filter(function (card) {
-      return cardMatchesSearch(card, query) && cardMatchesStatus(card, statusFilter);
+      return cardMatchesSearch(card, search) && cardMatchesStatus(card, statusFilter);
     });
   }
 
@@ -705,9 +742,12 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     currentCards = Array.isArray(cards) ? cards : [];
     if (!cards || cards.length === 0) {
       var searchInput = document.getElementById("codexCardSearchInput");
+      var search = parseCardSearch(searchInput ? searchInput.value : "");
       var statusFilter = selectedStatusFilter();
-      var message = searchInput && searchInput.value.trim()
-        ? "没有匹配的卡密，请换个关键词。"
+      var message = search.raw || search.terms.length
+        ? search.batch
+          ? "没有匹配的卡密，请确认每行一个卡密。"
+          : "没有匹配的卡密，请换个关键词。"
         : statusFilter !== "all"
           ? "当前筛选条件下没有卡密。"
           : "还没有卡密，先生成或导入一批。";
@@ -715,10 +755,11 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       updateSelectionControls();
       return;
     }
-    wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>状态</th><th>来源</th><th>创建时间</th><th>兑换文件</th></tr></thead><tbody>' + cards.map(function (card) {
+    wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>状态</th><th>来源</th><th class="time">创建时间</th><th class="time">提取时间</th><th class="file">兑换文件</th></tr></thead><tbody>' + cards.map(function (card) {
       var status = card.status || "";
       var file = card.redeemed_file ? '<span class="codex-card-admin-code">' + escapeHTML(card.redeemed_file) + '</span>' : "-";
-      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td>' + escapeHTML(card.source || "-") + '</td><td>' + escapeHTML(formatDate(card.created_at)) + '</td><td>' + file + '</td></tr>';
+      var redeemedAt = cardRedeemedAtValue(card);
+      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td>' + escapeHTML(card.source || "-") + '</td><td class="time">' + escapeHTML(formatDate(card.created_at)) + '</td><td class="time">' + escapeHTML(formatDate(redeemedAt)) + '</td><td class="file">' + file + '</td></tr>';
     }).join("") + '</tbody></table>';
     bindTableSelection();
     updateSelectionControls();

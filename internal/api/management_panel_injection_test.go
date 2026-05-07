@@ -191,7 +191,9 @@ func TestCodexCardManagementPanelRemovesInlineHelpAndCopiesGeneratedCards(t *tes
 func TestCodexCardManagementPanelCardListToolbarFiltersAndIconButtons(t *testing.T) {
 	script := []byte(codexCardManagementPanelScript)
 
-	assertContains(t, script, ".codex-card-admin-search{min-width:200px;flex:1 1 280px;max-width:340px}")
+	assertContains(t, script, ".codex-card-admin-search{min-width:260px;flex:1 1 420px;max-width:520px}")
+	assertContains(t, script, "codex-card-admin-search-textarea")
+	assertContains(t, script, "批量搜索：一行一个卡密")
 	assertContains(t, script, "font-size:14px;font-weight:800")
 	assertContains(t, script, "class=\"codex-card-admin-bulk-spacer\"")
 	assertContains(t, script, "id=\"codexCardStatusFilter\"")
@@ -215,6 +217,20 @@ func TestCodexCardManagementPanelCardListToolbarFiltersAndIconButtons(t *testing
 	assertNotContains(t, script, "id=\"codexCardRefreshButton\">刷新列表</button>")
 	assertNotContains(t, script, "id=\"codexCardExportSelectedButton\" disabled>导出选中</button>")
 	assertNotContains(t, script, "id=\"codexCardDeleteSelectedButton\" disabled>删除选中</button>")
+}
+
+func TestCodexCardManagementPanelCardListShowsRedeemedAtAndBatchSearch(t *testing.T) {
+	script := []byte(codexCardManagementPanelScript)
+
+	assertContains(t, script, "<th class=\"time\">提取时间</th>")
+	assertContains(t, script, "var redeemedAt = cardRedeemedAtValue(card);")
+	assertContains(t, script, "formatDate(redeemedAt)")
+	assertContains(t, script, "function parseCardSearch(value)")
+	assertContains(t, script, "terms: terms")
+	assertContains(t, script, "batch: normalized.indexOf(\"\\n\") >= 0")
+	assertContains(t, script, "search.batch && terms.length > 0")
+	assertContains(t, script, "return code === term;")
+	assertContains(t, script, "没有匹配的卡密，请确认每行一个卡密。")
 }
 
 func TestCodexCardManagementPanelStatsShowTotalAndTodayExtraction(t *testing.T) {
