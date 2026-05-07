@@ -39,6 +39,12 @@ func TestCodexExtractionPageSupportsBatchCodes(t *testing.T) {
 	assertCodexExtractionPageContains(t, "function startProgress")
 	assertCodexExtractionPageContains(t, "function completeProgress")
 	assertCodexExtractionPageContains(t, "验活中（")
+	assertCodexExtractionPageContains(t, "id=\"resultModal\"")
+	assertCodexExtractionPageContains(t, "function showResultModal")
+	assertCodexExtractionPageContains(t, "失败卡密已按错误原因分组显示")
+	assertCodexExtractionPageContains(t, "function blobFromBase64")
+	assertCodexExtractionPageContains(t, "payload.download_base64")
+	assertCodexExtractionPageContains(t, "parseExtractSummaryHeader")
 	assertCodexExtractionPageContains(t, "event.ctrlKey || event.metaKey")
 	assertCodexExtractionPageContains(t, "请先输入卡密或提取链接")
 }

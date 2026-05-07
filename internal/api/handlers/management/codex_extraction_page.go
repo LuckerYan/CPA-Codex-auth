@@ -110,6 +110,22 @@ const codexExtractionPageHTML = `<!doctype html>
     .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
     .status.ok { color: #86efac; }
     .status.error { color: var(--error); }
+    .result-modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: rgba(5,5,4,.62); backdrop-filter: blur(10px); }
+    .result-modal[hidden] { display: none; }
+    .result-card { width: min(100%, 620px); max-height: min(82vh, 720px); overflow: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; background: linear-gradient(180deg, rgba(31,29,26,.97), rgba(14,13,12,.95)); box-shadow: 0 34px 110px rgba(0,0,0,.56), inset 0 1px 0 rgba(255,255,255,.06); padding: 22px; }
+    .result-title { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; color: var(--text-primary); font-size: 18px; font-weight: 950; }
+    .result-close { width: 34px; height: 34px; min-width: 34px; padding: 0; justify-content: center; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--text-secondary); }
+    .result-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+    .result-count { border: 1px solid var(--border); border-radius: 15px; background: rgba(14,13,12,.55); padding: 13px 14px; }
+    .result-count span { display: block; color: var(--text-tertiary); font-size: 12px; font-weight: 800; margin-bottom: 5px; }
+    .result-count strong { color: var(--text-primary); font-size: 24px; line-height: 1; }
+    .result-count.success strong { color: #86efac; }
+    .result-count.failed strong { color: var(--error); }
+    .result-help { margin: 0 0 12px; color: var(--text-tertiary); font-size: 13px; line-height: 1.7; }
+    .failure-group { border: 1px solid rgba(239,154,139,.22); border-radius: 15px; background: rgba(239,154,139,.055); padding: 13px 14px; margin-top: 10px; }
+    .failure-group-title { color: #ffd0c8; font-size: 13px; font-weight: 900; margin-bottom: 8px; }
+    .failure-code-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+    .failure-code-list li { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
     .progress-shell { position: fixed; left: 50%; top: 50%; bottom: auto; z-index: 30; width: min(calc(100vw - 36px), 680px); display: grid; gap: 10px; padding: 14px 16px 15px; border: 1px solid rgba(255,255,255,.14); border-radius: 18px; background: linear-gradient(180deg, rgba(31,29,26,.92), rgba(14,13,12,.88)); box-shadow: 0 28px 78px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(14px); pointer-events: none; transform: translate(-50%, -50%); }
     .progress-shell[hidden] { display: none; }
     .progress-shell::before { content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(185,240,110,.62), rgba(142,215,239,.32), transparent); }
@@ -200,6 +216,20 @@ const codexExtractionPageHTML = `<!doctype html>
         <div class="progress-fill" id="progressFill"></div>
       </div>
     </div>
+    <div id="resultModal" class="result-modal" hidden role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+      <div class="result-card">
+        <div class="result-title">
+          <span id="resultTitle">提取结果</span>
+          <button id="resultCloseButton" class="result-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="result-counts">
+          <div class="result-count success"><span>成功个数</span><strong id="resultSuccessCount">0</strong></div>
+          <div class="result-count failed"><span>失败个数</span><strong id="resultFailedCount">0</strong></div>
+        </div>
+        <p id="resultHelp" class="result-help">提取完成。</p>
+        <div id="resultFailureGroups"></div>
+      </div>
+    </div>
     <footer class="footer">
       <span class="left">© CODEX EXTRACT</span>
       <span class="right">Codex Auth Pipeline</span>
@@ -216,6 +246,13 @@ const codexExtractionPageHTML = `<!doctype html>
     var progressFill = document.getElementById('progressFill');
     var progressStage = document.getElementById('progressStage');
     var progressPercent = document.getElementById('progressPercent');
+    var resultModal = document.getElementById('resultModal');
+    var resultTitle = document.getElementById('resultTitle');
+    var resultSuccessCount = document.getElementById('resultSuccessCount');
+    var resultFailedCount = document.getElementById('resultFailedCount');
+    var resultHelp = document.getElementById('resultHelp');
+    var resultFailureGroups = document.getElementById('resultFailureGroups');
+    var resultCloseButton = document.getElementById('resultCloseButton');
     var progressTimer = null;
     var progressResetTimer = null;
     var progressValue = 0;
@@ -319,6 +356,19 @@ const codexExtractionPageHTML = `<!doctype html>
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }
 
+    function blobFromBase64(encoded, contentType) {
+      var binary = atob(String(encoded || ''));
+      var chunkSize = 8192;
+      var chunks = [];
+      for (var offset = 0; offset < binary.length; offset += chunkSize) {
+        var slice = binary.slice(offset, offset + chunkSize);
+        var bytes = new Uint8Array(slice.length);
+        for (var i = 0; i < slice.length; i++) bytes[i] = slice.charCodeAt(i);
+        chunks.push(bytes);
+      }
+      return new Blob(chunks, { type: contentType || 'application/octet-stream' });
+    }
+
     function defaultDownloadName(format, count) {
       if (format === 'sub') {
         return 'sub2api-account.json';
@@ -348,6 +398,80 @@ const codexExtractionPageHTML = `<!doctype html>
         try { return await resp.json(); } catch (errJSON) {}
       }
       return { error: await resp.text() };
+    }
+
+    function parseExtractSummaryHeader(resp) {
+      var encoded = resp && resp.headers ? resp.headers.get('x-codex-extract-summary') : '';
+      if (!encoded) return null;
+      try {
+        var binary = atob(encoded);
+        var text = '';
+        if (window.TextDecoder) {
+          var bytes = new Uint8Array(binary.length);
+          for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          text = new TextDecoder('utf-8').decode(bytes);
+        } else {
+          text = decodeURIComponent(escape(binary));
+        }
+        return JSON.parse(text);
+      } catch (errSummary) {
+        return null;
+      }
+    }
+
+    function fallbackSummary(codes, format) {
+      return {
+        status: 'ok',
+        requested: codes.length,
+        success: codes.length,
+        failed: 0,
+        format: format,
+        failure_groups: []
+      };
+    }
+
+    function closeResultModal() {
+      if (resultModal) resultModal.hidden = true;
+    }
+
+    function showResultModal(summary, formatLabel) {
+      if (!(resultModal && resultTitle && resultSuccessCount && resultFailedCount && resultHelp && resultFailureGroups)) return;
+      summary = summary || {};
+      var success = Number(summary.success || 0);
+      var failed = Number(summary.failed || 0);
+      var groups = Array.isArray(summary.failure_groups) ? summary.failure_groups : (Array.isArray(summary.failureGroups) ? summary.failureGroups : []);
+      resultTitle.textContent = failed > 0 ? (success > 0 ? '提取部分成功' : '提取失败') : '提取成功';
+      resultSuccessCount.textContent = String(success);
+      resultFailedCount.textContent = String(failed);
+      if (failed > 0 && success > 0) {
+        resultHelp.textContent = '已为成功的卡密导出 ' + formatLabel + '；失败卡密已按错误原因分组显示。';
+      } else if (failed > 0) {
+        resultHelp.textContent = '本次没有可导出的卡密；失败卡密已按错误原因分组显示。';
+      } else {
+        resultHelp.textContent = '全部卡密提取成功，' + formatLabel + ' 已开始下载。';
+      }
+      resultFailureGroups.innerHTML = '';
+      for (var i = 0; i < groups.length; i++) {
+        var group = groups[i] || {};
+        var codes = Array.isArray(group.codes) ? group.codes : [];
+        if (codes.length === 0) continue;
+        var box = document.createElement('div');
+        box.className = 'failure-group';
+        var title = document.createElement('div');
+        title.className = 'failure-group-title';
+        title.textContent = (group.message || '提取失败') + '（' + codes.length + ' 个）';
+        box.appendChild(title);
+        var list = document.createElement('ul');
+        list.className = 'failure-code-list';
+        for (var j = 0; j < codes.length; j++) {
+          var item = document.createElement('li');
+          item.textContent = codes[j];
+          list.appendChild(item);
+        }
+        box.appendChild(list);
+        resultFailureGroups.appendChild(box);
+      }
+      resultModal.hidden = false;
     }
 
     function extractCardCodeInput(value) {
@@ -419,14 +543,34 @@ const codexExtractionPageHTML = `<!doctype html>
         });
         if (!resp.ok) {
           var err = await readError(resp);
+          if (err.summary) showResultModal(err.summary, formatLabel);
           throw new Error(err.error || '提取失败');
         }
-        var blob = await resp.blob();
-        var filename = filenameFromDisposition(resp.headers.get('content-disposition')) || defaultDownloadName(format, codes.length);
+        var respType = resp.headers.get('content-type') || '';
+        var disposition = resp.headers.get('content-disposition') || '';
+        var blob;
+        var filename;
+        var summary;
+        if (respType.indexOf('application/json') >= 0 && !disposition) {
+          var payload = await resp.json();
+          if (!payload.download_base64) throw new Error(payload.error || '提取失败');
+          blob = blobFromBase64(payload.download_base64, payload.content_type);
+          filename = payload.download_filename || defaultDownloadName(format, codes.length);
+          summary = payload.summary || fallbackSummary(codes, format);
+        } else {
+          blob = await resp.blob();
+          filename = filenameFromDisposition(disposition) || defaultDownloadName(format, codes.length);
+          summary = parseExtractSummaryHeader(resp) || fallbackSummary(codes, format);
+        }
         downloadBlob(blob, filename);
-        setStatus('提取成功 · ' + formatLabel + ' 已开始下载', 'ok');
+        if (summary.failed > 0) {
+          setStatus('提取部分成功 · 成功 ' + summary.success + ' 个，失败 ' + summary.failed + ' 个', 'ok');
+        } else {
+          setStatus('提取成功 · ' + formatLabel + ' 已开始下载', 'ok');
+        }
         completeProgress(formatLabel);
-        input.value = '';
+        showResultModal(summary, formatLabel);
+        if (!summary.failed) input.value = '';
       } catch (err) {
         setStatus(err.message || String(err), 'error');
         failProgress('提取失败');
@@ -437,12 +581,19 @@ const codexExtractionPageHTML = `<!doctype html>
     }
 
     button.addEventListener('click', extract);
+    if (resultCloseButton) resultCloseButton.addEventListener('click', closeResultModal);
+    if (resultModal) resultModal.addEventListener('click', function (event) {
+      if (event.target === resultModal) closeResultModal();
+    });
     for (var i = 0; i < formatInputs.length; i++) {
       formatInputs[i].addEventListener('change', refreshFormatCards);
     }
     refreshFormatCards();
     input.addEventListener('keydown', function (event) {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') extract();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeResultModal();
     });
   </script>
 </body>

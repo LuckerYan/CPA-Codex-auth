@@ -457,6 +457,300 @@ func TestExtractCodexAuthFilesReturnsZipAndRedeemsCards(t *testing.T) {
 	}
 }
 
+func TestExtractCodexAuthFilesPartiallyExtractsUnusedCards(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	validA := writeTestCodexAuthFile(t, authDir, "codex-a.json", "a@example.com")
+	usedAuth := writeTestCodexAuthFile(t, authDir, "codex-used.json", "used@example.com")
+	registerTestCodexAuth(t, manager, "codex-a.json", validA)
+
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes([]string{"card-a", "card-used"}); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+	usedData, errRead := os.ReadFile(usedAuth)
+	if errRead != nil {
+		t.Fatalf("read used auth: %v", errRead)
+	}
+	if errRedeem := store.redeem([]string{"card-used"}, []codexSelectedAuth{{
+		AuthID:   "codex-used.json",
+		FileName: "codex-used.json",
+		FilePath: usedAuth,
+		Data:     usedData,
+	}}); errRedeem != nil {
+		t.Fatalf("redeem setup failed: %v", errRedeem)
+	}
+
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-A","CARD-USED","CARD-MISSING"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var downloadResp codexExtractDownloadResponse
+	if errJSON := json.Unmarshal(w.Body.Bytes(), &downloadResp); errJSON != nil {
+		t.Fatalf("decode partial download response: %v body=%s", errJSON, w.Body.String())
+	}
+	summary := downloadResp.Summary
+	if summary.Status != "partial" || summary.Success != 1 || summary.Failed != 2 || summary.Requested != 3 {
+		t.Fatalf("unexpected extraction summary: %+v", summary)
+	}
+	if downloadResp.DownloadFileName == "" || downloadResp.DownloadBase64 == "" || !strings.Contains(downloadResp.ContentType, "application/zip") {
+		t.Fatalf("unexpected partial download metadata: %+v", downloadResp)
+	}
+	if !codexExtractSummaryHasFailure(summary, "卡密已使用", "CARD-USED") {
+		t.Fatalf("missing used-card failure in summary: %+v", summary)
+	}
+	if !codexExtractSummaryHasFailure(summary, "卡密不存在", "CARD-MISSING") {
+		t.Fatalf("missing not-found failure in summary: %+v", summary)
+	}
+
+	zipBytes, errDecode := base64.StdEncoding.DecodeString(downloadResp.DownloadBase64)
+	if errDecode != nil {
+		t.Fatalf("decode partial zip payload: %v", errDecode)
+	}
+	zipReader, errZip := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if errZip != nil {
+		t.Fatalf("read zip: %v", errZip)
+	}
+	if len(zipReader.File) != 1 || zipReader.File[0].Name != "codex-a.json" {
+		t.Fatalf("expected only unused card auth to be exported, got %+v", zipReader.File)
+	}
+
+	cards, errList := store.list()
+	if errList != nil {
+		t.Fatalf("list cards: %v", errList)
+	}
+	statusByCode := make(map[string]string)
+	for _, card := range cards {
+		statusByCode[card.Code] = card.Status
+	}
+	if statusByCode["CARD-A"] != codexCardStatusRedeemed {
+		t.Fatalf("expected CARD-A to be redeemed, got %q", statusByCode["CARD-A"])
+	}
+	if statusByCode["CARD-USED"] != codexCardStatusRedeemed {
+		t.Fatalf("expected CARD-USED to remain redeemed, got %q", statusByCode["CARD-USED"])
+	}
+}
+
+func TestExtractCodexAuthFilesReportsAllFailedCards(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes([]string{"card-used"}); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+	usedAuth := writeTestCodexAuthFile(t, authDir, "codex-used.json", "used@example.com")
+	usedData, errRead := os.ReadFile(usedAuth)
+	if errRead != nil {
+		t.Fatalf("read used auth: %v", errRead)
+	}
+	if errRedeem := store.redeem([]string{"card-used"}, []codexSelectedAuth{{
+		AuthID:   "codex-used.json",
+		FileName: "codex-used.json",
+		FilePath: usedAuth,
+		Data:     usedData,
+	}}); errRedeem != nil {
+		t.Fatalf("redeem setup failed: %v", errRedeem)
+	}
+
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-USED","CARD-MISSING"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	var payload struct {
+		Error   string              `json:"error"`
+		Summary codexExtractSummary `json:"summary"`
+	}
+	if errJSON := json.Unmarshal(w.Body.Bytes(), &payload); errJSON != nil {
+		t.Fatalf("decode error response: %v body=%s", errJSON, w.Body.String())
+	}
+	if payload.Error == "" || payload.Summary.Success != 0 || payload.Summary.Failed != 2 {
+		t.Fatalf("unexpected all-failed response: %+v", payload)
+	}
+	if !codexExtractSummaryHasFailure(payload.Summary, "卡密已使用", "CARD-USED") {
+		t.Fatalf("missing used-card failure in response: %+v", payload.Summary)
+	}
+	if !codexExtractSummaryHasFailure(payload.Summary, "卡密不存在", "CARD-MISSING") {
+		t.Fatalf("missing not-found failure in response: %+v", payload.Summary)
+	}
+}
+
+func TestExtractCodexAuthFilesReportsSummaryWhenNoUnredeemedAuthFilesRemain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	usableAuth := writeTestCodexAuthFile(t, authDir, "codex-usable.json", "usable@example.com")
+	registerTestCodexAuth(t, manager, "codex-usable.json", usableAuth)
+
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes([]string{"card-used", "card-target"}); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+	usedData, errRead := os.ReadFile(usableAuth)
+	if errRead != nil {
+		t.Fatalf("read auth: %v", errRead)
+	}
+	if errRedeem := store.redeem([]string{"card-used"}, []codexSelectedAuth{{
+		AuthID:   "codex-usable.json",
+		FileName: "codex-usable.json",
+		FilePath: usableAuth,
+		Data:     usedData,
+	}}); errRedeem != nil {
+		t.Fatalf("redeem setup failed: %v", errRedeem)
+	}
+
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-TARGET"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	var payload struct {
+		Error   string              `json:"error"`
+		Summary codexExtractSummary `json:"summary"`
+	}
+	if errJSON := json.Unmarshal(w.Body.Bytes(), &payload); errJSON != nil {
+		t.Fatalf("decode error response: %v body=%s", errJSON, w.Body.String())
+	}
+	if payload.Summary.Success != 0 || payload.Summary.Failed != 1 || payload.Summary.Requested != 1 {
+		t.Fatalf("unexpected shortage summary: %+v", payload.Summary)
+	}
+	if !codexExtractSummaryHasFailure(payload.Summary, "可用认证文件不足", "CARD-TARGET") {
+		t.Fatalf("expected shortage failure for target card, got %+v", payload.Summary)
+	}
+	if !strings.Contains(payload.Error, "no unredeemed codex auth files available") {
+		t.Fatalf("expected collect shortage error in response, got %+v", payload)
+	}
+}
+
+func TestExtractCodexAuthFilesExtractsAvailableCardsWhenAuthsAreShort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	validA := writeTestCodexAuthFile(t, authDir, "codex-a.json", "a@example.com")
+	validB := writeTestCodexAuthFile(t, authDir, "codex-b.json", "b@example.com")
+	validC := writeTestCodexAuthFile(t, authDir, "codex-c.json", "c@example.com")
+	registerTestCodexAuth(t, manager, "codex-a.json", validA)
+	registerTestCodexAuth(t, manager, "codex-b.json", validB)
+	registerTestCodexAuth(t, manager, "codex-c.json", validC)
+
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes([]string{"card-1", "card-2", "card-3", "card-4", "card-5"}); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", strings.NewReader(`{"items":["CARD-1","CARD-2","CARD-3","CARD-4","CARD-5"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var downloadResp codexExtractDownloadResponse
+	if errJSON := json.Unmarshal(w.Body.Bytes(), &downloadResp); errJSON != nil {
+		t.Fatalf("decode partial download response: %v body=%s", errJSON, w.Body.String())
+	}
+	summary := downloadResp.Summary
+	if summary.Status != "partial" || summary.Success != 3 || summary.Failed != 2 || summary.Requested != 5 {
+		t.Fatalf("unexpected shortage summary: %+v", summary)
+	}
+	if !codexExtractSummaryHasFailure(summary, "可用认证文件不足", "CARD-4") || !codexExtractSummaryHasFailure(summary, "可用认证文件不足", "CARD-5") {
+		t.Fatalf("missing shortage failure group: %+v", summary)
+	}
+	if downloadResp.DownloadFileName == "" || downloadResp.DownloadBase64 == "" || !strings.Contains(downloadResp.ContentType, "application/zip") {
+		t.Fatalf("unexpected shortage partial download metadata: %+v", downloadResp)
+	}
+
+	zipBytes, errDecode := base64.StdEncoding.DecodeString(downloadResp.DownloadBase64)
+	if errDecode != nil {
+		t.Fatalf("decode shortage zip payload: %v", errDecode)
+	}
+	zipReader, errZip := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if errZip != nil {
+		t.Fatalf("read zip: %v", errZip)
+	}
+	if len(zipReader.File) != 3 {
+		t.Fatalf("expected 3 exported auth files, got %+v", zipReader.File)
+	}
+
+	cards, errList := store.list()
+	if errList != nil {
+		t.Fatalf("list cards: %v", errList)
+	}
+	statusByCode := make(map[string]string)
+	for _, card := range cards {
+		statusByCode[card.Code] = card.Status
+	}
+	for _, code := range []string{"CARD-1", "CARD-2", "CARD-3"} {
+		if statusByCode[code] != codexCardStatusRedeemed {
+			t.Fatalf("expected %s to be redeemed, got %q", code, statusByCode[code])
+		}
+	}
+	for _, code := range []string{"CARD-4", "CARD-5"} {
+		if statusByCode[code] != codexCardStatusUnused {
+			t.Fatalf("expected %s to remain unused, got %q", code, statusByCode[code])
+		}
+	}
+}
+
 func TestExtractCodexAuthFilesReturnsSubJSONAndRedeemsCards(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	authDir := t.TempDir()
@@ -1038,6 +1332,37 @@ func TestCodexCardStoreDeleteReleasesRedeemedAuthReservation(t *testing.T) {
 	if errRedeemAgain != nil {
 		t.Fatalf("expected deleting redeemed card to release auth reservation, got %v", errRedeemAgain)
 	}
+}
+
+func decodeCodexExtractSummaryHeader(t *testing.T, w *httptest.ResponseRecorder) codexExtractSummary {
+	t.Helper()
+	raw := strings.TrimSpace(w.Header().Get(codexExtractSummaryHeader))
+	if raw == "" {
+		t.Fatalf("missing %s header", codexExtractSummaryHeader)
+	}
+	data, errDecode := base64.StdEncoding.DecodeString(raw)
+	if errDecode != nil {
+		t.Fatalf("decode summary header: %v", errDecode)
+	}
+	var summary codexExtractSummary
+	if errJSON := json.Unmarshal(data, &summary); errJSON != nil {
+		t.Fatalf("unmarshal summary header: %v data=%s", errJSON, string(data))
+	}
+	return summary
+}
+
+func codexExtractSummaryHasFailure(summary codexExtractSummary, message, code string) bool {
+	for _, group := range summary.FailureGroups {
+		if group.Message != message {
+			continue
+		}
+		for _, candidate := range group.Codes {
+			if candidate == code {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func writeTestCodexAuthFile(t *testing.T, dir, name, email string) string {

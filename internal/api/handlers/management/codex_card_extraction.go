@@ -39,6 +39,7 @@ const (
 	codexValidationConcurrencyCap = 16
 	codexQuotaUsageURL            = "https://chatgpt.com/backend-api/wham/usage"
 	codexQuotaUserAgent           = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal"
+	codexExtractSummaryHeader     = "X-Codex-Extract-Summary"
 )
 
 var codexCardStores sync.Map
@@ -93,6 +94,28 @@ type codexAuthExtractRequest struct {
 	Cards  string   `json:"cards"`
 	Items  []string `json:"items"`
 	Format string   `json:"format"`
+}
+
+type codexExtractSummary struct {
+	Status        string                     `json:"status"`
+	Requested     int                        `json:"requested"`
+	Success       int                        `json:"success"`
+	Failed        int                        `json:"failed"`
+	Format        string                     `json:"format"`
+	FailureGroups []codexExtractFailureGroup `json:"failure_groups,omitempty"`
+}
+
+type codexExtractFailureGroup struct {
+	Message string   `json:"message"`
+	Codes   []string `json:"codes"`
+}
+
+type codexExtractDownloadResponse struct {
+	Status           string              `json:"status"`
+	Summary          codexExtractSummary `json:"summary"`
+	DownloadFileName string              `json:"download_filename"`
+	ContentType      string              `json:"content_type"`
+	DownloadBase64   string              `json:"download_base64"`
 }
 
 type codexSubExport struct {
@@ -542,6 +565,42 @@ func (s *codexCardStore) ensureAvailable(codes []string) error {
 		}
 	}
 	return nil
+}
+
+func (s *codexCardStore) availableCodes(codes []string) ([]string, []codexExtractFailureGroup, error) {
+	if s == nil {
+		return nil, nil, fmt.Errorf("card store is nil")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return nil, nil, err
+	}
+	available := make([]string, 0, len(codes))
+	failures := make([]codexExtractFailureGroup, 0)
+	for _, raw := range codes {
+		code, ok := normalizeCodexCardCodeValidated(raw)
+		if !ok {
+			addCodexExtractFailure(&failures, "卡密格式无效", strings.TrimSpace(raw))
+			continue
+		}
+		record, exists := s.cards[code]
+		if !exists || record == nil {
+			addCodexExtractFailure(&failures, "卡密不存在", code)
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(record.Status)) {
+		case codexCardStatusUnused, "":
+			available = append(available, code)
+		case codexCardStatusRedeemed:
+			addCodexExtractFailure(&failures, "卡密已使用", code)
+		case codexCardStatusDisabled:
+			addCodexExtractFailure(&failures, "卡密已禁用", code)
+		default:
+			addCodexExtractFailure(&failures, "卡密状态不可提取："+strings.TrimSpace(record.Status), code)
+		}
+	}
+	return available, failures, nil
 }
 
 func (s *codexCardStore) redeemedAuthKeys() (map[string]struct{}, error) {
@@ -1001,6 +1060,144 @@ func uniqueCodexCardCodes(codes []string) ([]string, []string, []string) {
 	return out, duplicates, invalid
 }
 
+func normalizeCodexCardExtractCodes(rawCodes []string) ([]string, []codexExtractFailureGroup) {
+	seen := make(map[string]struct{}, len(rawCodes))
+	out := make([]string, 0, len(rawCodes))
+	failures := make([]codexExtractFailureGroup, 0)
+	for _, raw := range rawCodes {
+		code, ok := normalizeCodexCardCodeValidated(raw)
+		if !ok {
+			trimmed := strings.TrimSpace(raw)
+			if trimmed != "" {
+				addCodexExtractFailure(&failures, "卡密格式无效", trimmed)
+			}
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			addCodexExtractFailure(&failures, "输入中存在重复卡密", code)
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	return out, failures
+}
+
+func addCodexExtractFailure(groups *[]codexExtractFailureGroup, message string, codes ...string) {
+	if groups == nil {
+		return
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "提取失败"
+	}
+	cleaned := make([]string, 0, len(codes))
+	for _, raw := range codes {
+		code := strings.TrimSpace(raw)
+		if code != "" {
+			cleaned = append(cleaned, code)
+		}
+	}
+	if len(cleaned) == 0 {
+		return
+	}
+	for i := range *groups {
+		if (*groups)[i].Message == message {
+			(*groups)[i].Codes = append((*groups)[i].Codes, cleaned...)
+			return
+		}
+	}
+	*groups = append(*groups, codexExtractFailureGroup{
+		Message: message,
+		Codes:   cleaned,
+	})
+}
+
+func codexExtractFailureCount(groups []codexExtractFailureGroup) int {
+	total := 0
+	for _, group := range groups {
+		total += len(group.Codes)
+	}
+	return total
+}
+
+func newCodexExtractSummary(format string, requested, success int, failures []codexExtractFailureGroup) codexExtractSummary {
+	failed := codexExtractFailureCount(failures)
+	status := "ok"
+	if success > 0 && failed > 0 {
+		status = "partial"
+	} else if success == 0 && failed > 0 {
+		status = "failed"
+	}
+	return codexExtractSummary{
+		Status:        status,
+		Requested:     requested,
+		Success:       success,
+		Failed:        failed,
+		Format:        format,
+		FailureGroups: failures,
+	}
+}
+
+func codexExtractErrorMessage(summary codexExtractSummary) string {
+	if summary.Failed > 0 && summary.Success > 0 {
+		return fmt.Sprintf("提取部分成功：成功 %d 个，失败 %d 个", summary.Success, summary.Failed)
+	}
+	if summary.Failed > 0 {
+		return fmt.Sprintf("提取失败：成功 %d 个，失败 %d 个", summary.Success, summary.Failed)
+	}
+	return fmt.Sprintf("提取成功：成功 %d 个，失败 %d 个", summary.Success, summary.Failed)
+}
+
+func codexExtractFailureStatus(groups []codexExtractFailureGroup) int {
+	status := http.StatusBadRequest
+	for _, group := range groups {
+		message := strings.TrimSpace(group.Message)
+		switch {
+		case strings.Contains(message, "不存在"):
+			if status == http.StatusBadRequest {
+				status = http.StatusNotFound
+			}
+		case strings.Contains(message, "已使用"), strings.Contains(message, "已禁用"), strings.Contains(message, "不足"), strings.Contains(message, "不可提取"):
+			return http.StatusConflict
+		}
+	}
+	return status
+}
+
+func writeCodexExtractSummaryHeader(c *gin.Context, summary codexExtractSummary) {
+	if c == nil {
+		return
+	}
+	data, errMarshal := json.Marshal(summary)
+	if errMarshal != nil {
+		log.WithError(errMarshal).Debug("failed to encode codex extraction summary")
+		return
+	}
+	c.Header(codexExtractSummaryHeader, base64.StdEncoding.EncodeToString(data))
+}
+
+func codexExtractContentType(format string) string {
+	if format == "sub" {
+		return "application/json; charset=utf-8"
+	}
+	return "application/zip"
+}
+
+func writeCodexExtractDownloadResponse(c *gin.Context, fileName, contentType string, bodyBytes []byte, summary codexExtractSummary) {
+	if c == nil {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, codexExtractDownloadResponse{
+		Status:           summary.Status,
+		Summary:          summary,
+		DownloadFileName: fileName,
+		ContentType:      contentType,
+		DownloadBase64:   base64.StdEncoding.EncodeToString(bodyBytes),
+	})
+}
+
 func (h *Handler) GenerateCodexCards(c *gin.Context) {
 	if h == nil || h.cfg == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management config unavailable"})
@@ -1289,34 +1486,29 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errFormat.Error()})
 		return
 	}
-	cardCodes := splitCodexCardExtractInput(req)
-	if len(cardCodes) == 0 {
+	rawCardCodes := splitCodexCardExtractInput(req)
+	if len(rawCardCodes) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no card codes supplied"})
 		return
 	}
-	cardCodes, duplicates, invalid := uniqueCodexCardCodes(cardCodes)
-	if len(invalid) > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid card codes", "invalid": invalid})
-		return
-	}
-	if len(duplicates) > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "duplicate card codes are not allowed", "duplicates": duplicates})
-		return
-	}
+	cardCodes, failureGroups := normalizeCodexCardExtractCodes(rawCardCodes)
 	store, err := getCodexCardStore(h.cfg.AuthDir)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	if err := store.ensureAvailable(cardCodes); err != nil {
-		status := http.StatusBadRequest
-		switch {
-		case strings.Contains(strings.ToLower(err.Error()), "not found"):
-			status = http.StatusNotFound
-		case strings.Contains(strings.ToLower(err.Error()), "already used"):
-			status = http.StatusConflict
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
+	availableCodes, availabilityFailures, errAvailable := store.availableCodes(cardCodes)
+	if errAvailable != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errAvailable.Error()})
+		return
+	}
+	failureGroups = append(failureGroups, availabilityFailures...)
+	if len(availableCodes) == 0 {
+		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
+		c.JSON(codexExtractFailureStatus(failureGroups), gin.H{
+			"error":   codexExtractErrorMessage(summary),
+			"summary": summary,
+		})
 		return
 	}
 	redeemedAuths, errRedeemedAuths := store.redeemedAuthKeys()
@@ -1326,13 +1518,34 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 	}
 	candidates, errCandidates := h.collectCodexAuthCandidates(c.Request.Context(), redeemedAuths)
 	if errCandidates != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errCandidates.Error()})
+		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes...)
+		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   codexExtractErrorMessage(summary) + "：" + errCandidates.Error(),
+			"summary": summary,
+		})
 		return
 	}
-	selected, errSelect := h.validateCodexAuthCandidates(c.Request.Context(), candidates, len(cardCodes))
+	selected, errSelect := h.selectCodexAuthCandidates(c.Request.Context(), candidates, len(availableCodes))
 	if errSelect != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": errSelect.Error()})
+		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes...)
+		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   codexExtractErrorMessage(summary) + "：" + errSelect.Error(),
+			"summary": summary,
+		})
 		return
+	}
+	if len(selected) == 0 {
+		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   codexExtractErrorMessage(summary) + "：可用认证文件不足",
+			"summary": summary,
+		})
+		return
+	}
+	if len(selected) < len(availableCodes) {
+		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes[len(selected):]...)
 	}
 	files, errLoad := h.loadCodexAuthFiles(selected)
 	if errLoad != nil {
@@ -1362,7 +1575,8 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		}
 		writeOutput = writeCodexAuthZip
 	}
-	if errRedeem := store.redeem(cardCodes, files); errRedeem != nil {
+	successCodes := availableCodes[:len(files)]
+	if errRedeem := store.redeem(successCodes, files); errRedeem != nil {
 		status := http.StatusConflict
 		if strings.Contains(strings.ToLower(errRedeem.Error()), "not found") {
 			status = http.StatusNotFound
@@ -1370,6 +1584,12 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(status, gin.H{"error": errRedeem.Error()})
 		return
 	}
+	summary := newCodexExtractSummary(format, len(rawCardCodes), len(files), failureGroups)
+	if summary.Failed > 0 {
+		writeCodexExtractDownloadResponse(c, downloadName, codexExtractContentType(format), bodyBytes, summary)
+		return
+	}
+	writeCodexExtractSummaryHeader(c, summary)
 	if errWrite := writeOutput(c, downloadName, bodyBytes); errWrite != nil {
 		log.WithError(errWrite).Error("failed to write codex auth extraction")
 		return
@@ -1466,12 +1686,9 @@ func resolveCodexAuthPath(auth *coreauth.Auth, authDir string) string {
 	return filepath.Join(authDir, fileName)
 }
 
-func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []codexAuthCandidate, need int) ([]codexAuthCandidate, error) {
-	if need <= 0 {
+func (h *Handler) selectCodexAuthCandidates(ctx context.Context, candidates []codexAuthCandidate, limit int) ([]codexAuthCandidate, error) {
+	if limit <= 0 {
 		return nil, fmt.Errorf("requested card count must be greater than zero")
-	}
-	if len(candidates) < need {
-		return nil, fmt.Errorf("not enough codex auth files available: need %d, have %d", need, len(candidates))
 	}
 	if h == nil || h.authManager == nil {
 		return nil, fmt.Errorf("core auth manager unavailable")
@@ -1493,7 +1710,7 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 
 	var (
 		mu           sync.Mutex
-		selected     = make([]codexAuthCandidate, 0, need)
+		selected     = make([]codexAuthCandidate, 0, limit)
 		firstErr     error
 		checked      int
 		failed       int
@@ -1549,9 +1766,9 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 					}
 					if validateOne(candidate) {
 						mu.Lock()
-						if len(selected) < need {
+						if len(selected) < limit {
 							selected = append(selected, candidate)
-							if len(selected) >= need {
+							if len(selected) >= limit {
 								cancel()
 							}
 						}
@@ -1578,8 +1795,17 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 	dispatchDone.Wait()
 	workerWG.Wait()
 
-	if len(selected) < need {
-		details := fmt.Sprintf("need %d, valid %d, checked %d of %d", need, len(selected), checked, len(candidates))
+	sort.Slice(selected, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(selected[i].FileName))
+		right := strings.ToLower(strings.TrimSpace(selected[j].FileName))
+		if left == right {
+			return selected[i].FilePath < selected[j].FilePath
+		}
+		return left < right
+	})
+
+	if len(selected) == 0 && len(candidates) > 0 {
+		details := fmt.Sprintf("need 1, valid 0, checked %d of %d", checked, len(candidates))
 		if failed > 0 {
 			details += fmt.Sprintf(", failed %d", failed)
 		}
@@ -1592,15 +1818,20 @@ func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []
 		return nil, fmt.Errorf("not enough valid codex auth files (%s)", details)
 	}
 
-	sort.Slice(selected, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(selected[i].FileName))
-		right := strings.ToLower(strings.TrimSpace(selected[j].FileName))
-		if left == right {
-			return selected[i].FilePath < selected[j].FilePath
-		}
-		return left < right
-	})
+	return selected, nil
+}
 
+func (h *Handler) validateCodexAuthCandidates(ctx context.Context, candidates []codexAuthCandidate, need int) ([]codexAuthCandidate, error) {
+	if need <= 0 {
+		return nil, fmt.Errorf("requested card count must be greater than zero")
+	}
+	selected, errSelect := h.selectCodexAuthCandidates(ctx, candidates, need)
+	if errSelect != nil {
+		return nil, errSelect
+	}
+	if len(selected) < need {
+		return nil, fmt.Errorf("not enough codex auth files available: need %d, have %d", need, len(selected))
+	}
 	return selected, nil
 }
 
