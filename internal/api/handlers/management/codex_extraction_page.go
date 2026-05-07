@@ -110,15 +110,15 @@ const codexExtractionPageHTML = `<!doctype html>
     .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
     .status.ok { color: #86efac; }
     .status.error { color: var(--error); }
-    .result-modal { --modal-enter-ease: cubic-bezier(.16, 1, .3, 1); --modal-exit-ease: cubic-bezier(.4, 0, 1, 1); position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: rgba(5,5,4,.56); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s var(--modal-exit-ease), visibility 0s linear .2s; }
+    .result-modal { --modal-enter-ease: cubic-bezier(.22, 1, .36, 1); --modal-exit-ease: cubic-bezier(.22, 1, .36, 1); position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: rgba(5,5,4,.56); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .24s var(--modal-exit-ease), visibility 0s linear .24s; }
     .result-modal:not([hidden]) { will-change: opacity; }
-    .result-modal.is-open { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .22s var(--modal-enter-ease), visibility 0s; }
+    .result-modal.is-open { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .24s var(--modal-enter-ease), visibility 0s; }
     .result-modal.is-closing { opacity: 0; visibility: visible; pointer-events: none; transition: opacity .2s var(--modal-exit-ease), visibility 0s linear .2s; }
     .result-modal[hidden] { display: none; }
-    .result-card { width: min(100%, 620px); max-height: min(82vh, 720px); overflow: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; background: linear-gradient(180deg, rgba(31,29,26,.97), rgba(14,13,12,.95)); box-shadow: 0 20px 56px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06); padding: 22px; opacity: 0; transform: translate3d(0, 18px, 0) scale(.965); transform-origin: center; transition: transform .32s var(--modal-enter-ease), opacity .22s ease-out; backface-visibility: hidden; contain: paint; }
+    .result-card { width: min(100%, 620px); max-height: min(82vh, 720px); overflow: auto; scrollbar-gutter: stable; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; background: linear-gradient(180deg, rgba(31,29,26,.97), rgba(14,13,12,.95)); box-shadow: 0 20px 56px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06); padding: 22px; opacity: 0; transform: translate3d(0, 20px, 0) scale(.96); transform-origin: center; transition: transform .24s var(--modal-enter-ease), opacity .24s ease-out; backface-visibility: hidden; contain: paint; }
     .result-modal:not([hidden]) .result-card { will-change: transform, opacity; }
     .result-modal.is-open .result-card { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-    .result-modal.is-closing .result-card { opacity: 0; transform: translate3d(0, 8px, 0) scale(.99); transition: transform .2s var(--modal-exit-ease), opacity .18s var(--modal-exit-ease); }
+    .result-modal.is-closing .result-card { opacity: 0; transform: translate3d(0, 12px, 0) scale(.985); transition: transform .2s var(--modal-exit-ease), opacity .18s ease-out; }
     @media (prefers-reduced-motion: reduce) {
       .result-modal, .result-modal.is-open, .result-modal.is-closing, .result-card, .result-modal.is-open .result-card, .result-modal.is-closing .result-card { transition-duration: .01ms !important; transform: none !important; }
     }
@@ -529,11 +529,9 @@ const codexExtractionPageHTML = `<!doctype html>
       }
       resultModal.classList.remove('is-open', 'is-closing');
       resultShowFrame = requestAnimationFrame(function () {
-        resultShowFrame = requestAnimationFrame(function () {
-          resultShowFrame = null;
-          if (!resultModal || resultModal.hidden) return;
-          resultModal.classList.add('is-open');
-        });
+        resultShowFrame = null;
+        if (!resultModal || resultModal.hidden) return;
+        resultModal.classList.add('is-open');
       });
     }
 
