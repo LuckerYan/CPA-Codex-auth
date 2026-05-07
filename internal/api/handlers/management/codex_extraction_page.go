@@ -110,9 +110,18 @@ const codexExtractionPageHTML = `<!doctype html>
     .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
     .status.ok { color: #86efac; }
     .status.error { color: var(--error); }
-    .result-modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: rgba(5,5,4,.62); backdrop-filter: blur(10px); }
+    .result-modal { --modal-enter-ease: cubic-bezier(.16, 1, .3, 1); --modal-exit-ease: cubic-bezier(.4, 0, 1, 1); position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 22px; background: rgba(5,5,4,.56); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s var(--modal-exit-ease), visibility 0s linear .2s; }
+    .result-modal:not([hidden]) { will-change: opacity; }
+    .result-modal.is-open { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .22s var(--modal-enter-ease), visibility 0s; }
+    .result-modal.is-closing { opacity: 0; visibility: visible; pointer-events: none; transition: opacity .2s var(--modal-exit-ease), visibility 0s linear .2s; }
     .result-modal[hidden] { display: none; }
-    .result-card { width: min(100%, 620px); max-height: min(82vh, 720px); overflow: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; background: linear-gradient(180deg, rgba(31,29,26,.97), rgba(14,13,12,.95)); box-shadow: 0 34px 110px rgba(0,0,0,.56), inset 0 1px 0 rgba(255,255,255,.06); padding: 22px; }
+    .result-card { width: min(100%, 620px); max-height: min(82vh, 720px); overflow: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 22px; background: linear-gradient(180deg, rgba(31,29,26,.97), rgba(14,13,12,.95)); box-shadow: 0 20px 56px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06); padding: 22px; opacity: 0; transform: translate3d(0, 18px, 0) scale(.965); transform-origin: center; transition: transform .32s var(--modal-enter-ease), opacity .22s ease-out; backface-visibility: hidden; contain: paint; }
+    .result-modal:not([hidden]) .result-card { will-change: transform, opacity; }
+    .result-modal.is-open .result-card { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+    .result-modal.is-closing .result-card { opacity: 0; transform: translate3d(0, 8px, 0) scale(.99); transition: transform .2s var(--modal-exit-ease), opacity .18s var(--modal-exit-ease); }
+    @media (prefers-reduced-motion: reduce) {
+      .result-modal, .result-modal.is-open, .result-modal.is-closing, .result-card, .result-modal.is-open .result-card, .result-modal.is-closing .result-card { transition-duration: .01ms !important; transform: none !important; }
+    }
     .result-title { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; color: var(--text-primary); font-size: 18px; font-weight: 950; }
     .result-close { width: 34px; height: 34px; min-width: 34px; padding: 0; justify-content: center; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--text-secondary); }
     .result-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
@@ -245,6 +254,7 @@ const codexExtractionPageHTML = `<!doctype html>
     var progressStage = document.getElementById('progressStage');
     var progressPercent = document.getElementById('progressPercent');
     var resultModal = document.getElementById('resultModal');
+    var resultCard = resultModal ? resultModal.querySelector('.result-card') : null;
     var resultTitle = document.getElementById('resultTitle');
     var resultSuccessCount = document.getElementById('resultSuccessCount');
     var resultFailedCount = document.getElementById('resultFailedCount');
@@ -253,6 +263,9 @@ const codexExtractionPageHTML = `<!doctype html>
     var resultCloseButton = document.getElementById('resultCloseButton');
     var progressTimer = null;
     var progressResetTimer = null;
+    var resultHideTimer = null;
+    var resultHideTransitionEnd = null;
+    var resultShowFrame = null;
     var progressValue = 0;
     var progressTarget = 0;
     var buttonLabel = button.querySelector('span');
@@ -423,8 +436,44 @@ const codexExtractionPageHTML = `<!doctype html>
       };
     }
 
+    function cancelResultShowFrame() {
+      if (!resultShowFrame) return;
+      cancelAnimationFrame(resultShowFrame);
+      resultShowFrame = null;
+    }
+
+    function clearResultHideHandler() {
+      if (resultHideTimer) {
+        clearTimeout(resultHideTimer);
+        resultHideTimer = null;
+      }
+      if (resultCard && resultHideTransitionEnd) {
+        resultCard.removeEventListener('transitionend', resultHideTransitionEnd);
+        resultHideTransitionEnd = null;
+      }
+    }
+
+    function finishResultModalClose() {
+      if (!resultModal) return;
+      clearResultHideHandler();
+      resultModal.hidden = true;
+      resultModal.classList.remove('is-open', 'is-closing');
+    }
+
     function closeResultModal() {
-      if (resultModal) resultModal.hidden = true;
+      if (!resultModal || resultModal.hidden) return;
+      cancelResultShowFrame();
+      clearResultHideHandler();
+      resultModal.classList.remove('is-open');
+      resultModal.classList.add('is-closing');
+      if (resultCard) {
+        resultHideTransitionEnd = function (event) {
+          if (event.target !== resultCard || event.propertyName !== 'transform') return;
+          finishResultModalClose();
+        };
+        resultCard.addEventListener('transitionend', resultHideTransitionEnd);
+      }
+      resultHideTimer = setTimeout(finishResultModalClose, 300);
     }
 
     function showResultModal(summary, formatLabel, message) {
@@ -473,7 +522,19 @@ const codexExtractionPageHTML = `<!doctype html>
         box.appendChild(list);
         resultFailureGroups.appendChild(box);
       }
-      resultModal.hidden = false;
+      clearResultHideHandler();
+      cancelResultShowFrame();
+      if (resultModal.hidden) {
+        resultModal.hidden = false;
+      }
+      resultModal.classList.remove('is-open', 'is-closing');
+      resultShowFrame = requestAnimationFrame(function () {
+        resultShowFrame = requestAnimationFrame(function () {
+          resultShowFrame = null;
+          if (!resultModal || resultModal.hidden) return;
+          resultModal.classList.add('is-open');
+        });
+      });
     }
 
     function extractCardCodeInput(value) {
@@ -566,12 +627,13 @@ const codexExtractionPageHTML = `<!doctype html>
         }
         downloadBlob(blob, filename);
         completeProgress(formatLabel);
+        hideProgress();
         showResultModal(summary, formatLabel);
         if (!summary.failed) input.value = '';
       } catch (err) {
         var errorSummary = err && err.summary ? err.summary : { status: 'failed', requested: codes.length, success: 0, failed: 0, format: format, failure_groups: [] };
+        hideProgress();
         showResultModal(errorSummary, formatLabel, err.message || String(err));
-        failProgress('提取失败');
       } finally {
         button.disabled = false;
         setButtonBusy(false);
