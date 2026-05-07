@@ -202,7 +202,6 @@ const codexExtractionPageHTML = `<!doctype html>
               <span>提取</span>
             </button>
           </div>
-          <div id="status" class="status">就绪</div>
           <div class="note">每行输入一张卡密或一个邮箱---keycode 链接；CPA 会合并为 ZIP，SUB 会导出单个 JSON。</div>
         </div>
       </section>
@@ -238,7 +237,6 @@ const codexExtractionPageHTML = `<!doctype html>
   <script>
     var input = document.getElementById('cardCode');
     var button = document.getElementById('extractButton');
-    var statusLine = document.getElementById('status');
     var formatInputs = document.querySelectorAll('input[name="extractFormat"]');
     var formatCards = document.querySelectorAll('[data-format-card]');
     var progressShell = document.getElementById('progressShell');
@@ -259,11 +257,6 @@ const codexExtractionPageHTML = `<!doctype html>
     var progressTarget = 0;
     var buttonLabel = button.querySelector('span');
     var buttonDefaultLabel = buttonLabel ? buttonLabel.textContent : '提取';
-
-    function setStatus(message, type) {
-      statusLine.textContent = message || '';
-      statusLine.className = 'status' + (type ? ' ' + type : '');
-    }
 
     function setButtonBusy(isBusy) {
       if (buttonLabel) {
@@ -434,16 +427,25 @@ const codexExtractionPageHTML = `<!doctype html>
       if (resultModal) resultModal.hidden = true;
     }
 
-    function showResultModal(summary, formatLabel) {
+    function showResultModal(summary, formatLabel, message) {
       if (!(resultModal && resultTitle && resultSuccessCount && resultFailedCount && resultHelp && resultFailureGroups)) return;
       summary = summary || {};
+      var status = String(summary.status || '').toLowerCase();
       var success = Number(summary.success || 0);
       var failed = Number(summary.failed || 0);
       var groups = Array.isArray(summary.failure_groups) ? summary.failure_groups : (Array.isArray(summary.failureGroups) ? summary.failureGroups : []);
-      resultTitle.textContent = failed > 0 ? (success > 0 ? '提取部分成功' : '提取失败') : '提取成功';
+      if (status === 'partial') {
+        resultTitle.textContent = '提取部分成功';
+      } else if (status === 'failed') {
+        resultTitle.textContent = '提取失败';
+      } else {
+        resultTitle.textContent = failed > 0 ? (success > 0 ? '提取部分成功' : '提取失败') : '提取成功';
+      }
       resultSuccessCount.textContent = String(success);
       resultFailedCount.textContent = String(failed);
-      if (failed > 0 && success > 0) {
+      if (message && String(message).trim() !== '') {
+        resultHelp.textContent = String(message).trim();
+      } else if (failed > 0 && success > 0) {
         resultHelp.textContent = '已为成功的卡密导出 ' + formatLabel + '；失败卡密已按错误原因分组显示。';
       } else if (failed > 0) {
         resultHelp.textContent = '本次没有可导出的卡密；失败卡密已按错误原因分组显示。';
@@ -525,7 +527,7 @@ const codexExtractionPageHTML = `<!doctype html>
     async function extract() {
       var codes = getCardCodes();
       if (codes.length === 0) {
-        setStatus('请先输入卡密或提取链接', 'error');
+        showResultModal({ status: 'failed', requested: 0, success: 0, failed: 0, format: getSelectedFormat(), failure_groups: [] }, getSelectedFormat() === 'sub' ? 'SUB JSON' : 'CPA ZIP', '请先输入卡密或提取链接');
         input.focus();
         return;
       }
@@ -533,7 +535,6 @@ const codexExtractionPageHTML = `<!doctype html>
       setButtonBusy(true);
       var format = getSelectedFormat();
       var formatLabel = format === 'sub' ? 'SUB JSON' : 'CPA ZIP';
-      setStatus((codes.length > 1 ? '验活中（' + codes.length + '）' : '验活中') + ' · 准备 ' + formatLabel + '…', '');
       startProgress(codes.length, formatLabel);
       try {
         var resp = await fetch('/v0/codex-extract', {
@@ -543,8 +544,9 @@ const codexExtractionPageHTML = `<!doctype html>
         });
         if (!resp.ok) {
           var err = await readError(resp);
-          if (err.summary) showResultModal(err.summary, formatLabel);
-          throw new Error(err.error || '提取失败');
+          var httpErr = new Error(err.error || '提取失败');
+          httpErr.summary = err.summary || null;
+          throw httpErr;
         }
         var respType = resp.headers.get('content-type') || '';
         var disposition = resp.headers.get('content-disposition') || '';
@@ -563,16 +565,12 @@ const codexExtractionPageHTML = `<!doctype html>
           summary = parseExtractSummaryHeader(resp) || fallbackSummary(codes, format);
         }
         downloadBlob(blob, filename);
-        if (summary.failed > 0) {
-          setStatus('提取部分成功 · 成功 ' + summary.success + ' 个，失败 ' + summary.failed + ' 个', 'ok');
-        } else {
-          setStatus('提取成功 · ' + formatLabel + ' 已开始下载', 'ok');
-        }
         completeProgress(formatLabel);
         showResultModal(summary, formatLabel);
         if (!summary.failed) input.value = '';
       } catch (err) {
-        setStatus(err.message || String(err), 'error');
+        var errorSummary = err && err.summary ? err.summary : { status: 'failed', requested: codes.length, success: 0, failed: 0, format: format, failure_groups: [] };
+        showResultModal(errorSummary, formatLabel, err.message || String(err));
         failProgress('提取失败');
       } finally {
         button.disabled = false;
