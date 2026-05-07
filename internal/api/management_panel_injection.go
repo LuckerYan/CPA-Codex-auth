@@ -252,7 +252,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-bulkbar{border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:14px;align-items:center;justify-content:flex-start;gap:12px;margin:14px 0 14px;padding:14px;display:flex;flex-wrap:wrap}
 .codex-card-admin-search{min-width:260px;flex:1 1 420px;max-width:520px}
 .codex-card-admin-search .codex-card-admin-input{height:40px}
-.codex-card-admin-search .codex-card-admin-search-textarea{height:48px;min-height:48px;max-height:118px;resize:vertical;line-height:1.35;white-space:pre-wrap}
+.codex-card-admin-search .codex-card-admin-search-textarea{height:40px!important;min-height:40px!important;max-height:40px!important;display:block;resize:none;overflow:auto;line-height:1.35;white-space:pre-wrap}
 .codex-card-admin-filter{position:relative;min-width:150px;flex:0 0 150px}
 .codex-card-admin-filter .codex-card-admin-input{height:40px;padding-right:36px;appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;font-size:14px;font-weight:800;line-height:1.2}
 .codex-card-admin-filter::after{content:"";position:absolute;right:14px;top:50%;width:12px;height:12px;pointer-events:none;background:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22M3 4.75 6 7.75 9 4.75%22 stroke=%22%238b8680%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E') center/12px 12px no-repeat;transform:translateY(-50%);opacity:.85}
@@ -263,11 +263,11 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-bulk-actions .codex-card-admin-button{min-height:36px;padding:8px 12px;font-size:13px}
 .codex-card-admin-bulk-actions .codex-card-admin-button.icon-only{width:40px;min-width:40px;min-height:40px;padding:0;gap:0;flex:0 0 auto}
 .codex-card-admin-bulk-actions .codex-card-admin-button.icon-only svg{width:17px;height:17px;display:block}
-.AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:minmax(220px,380px) minmax(86px,132px) minmax(132px,210px) minmax(144px,168px)!important;justify-content:start}
+.AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:minmax(240px,420px) minmax(86px,132px) minmax(128px,168px) minmax(144px,168px)!important;align-items:start!important;justify-content:start}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o{width:100%;max-width:100%}
-.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(1){max-width:380px}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(1){max-width:420px}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(2){max-width:132px}
-.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(3){max-width:210px}
+.AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(3){max-width:168px}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(4){max-width:168px}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__pageSizeSelect___yEBvp{width:100%;min-width:0}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__sortSelect___4fEjm{width:100%;min-width:0}
@@ -508,7 +508,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       </div>
       <div class="codex-card-admin-bulkbar">
         <div class="codex-card-admin-search">
-          <textarea class="codex-card-admin-input codex-card-admin-search-textarea" id="codexCardSearchInput" rows="2" placeholder="搜索卡密、状态、来源、提取时间或兑换文件&#10;批量搜索：一行一个卡密"></textarea>
+          <textarea class="codex-card-admin-input codex-card-admin-search-textarea" id="codexCardSearchInput" rows="1" placeholder="搜索卡密、状态、来源、提取时间或兑换文件；批量搜索：一行一个卡密"></textarea>
         </div>
         <span class="codex-card-admin-selection" id="codexCardSelectionStatus">已选择 0 个</span>
         <span class="codex-card-admin-bulk-spacer" aria-hidden="true"></span>
@@ -1044,8 +1044,11 @@ const authFileCodexStatsScript = `
       ".auth-file-codex-stat.banned .auth-file-codex-stat-value{color:var(--error-color)}",
       ".auth-file-codex-stat.extracted .auth-file-codex-stat-value{color:var(--primary-color)}",
       ".auth-files-search-source-hidden{display:none!important}",
-      ".auth-files-card-code-search{box-sizing:border-box;width:100%;min-height:50px;max-height:130px;resize:vertical;line-height:1.35;white-space:pre-wrap;font:inherit}",
-      ".auth-files-card-code-search-status{color:var(--text-secondary);min-height:18px;margin-top:6px;font-size:12px;font-weight:700;line-height:1.4}",
+      ".auth-files-card-code-search-heading{align-items:center;display:flex;gap:10px;min-height:16.5px;margin:0}",
+      ".auth-files-card-code-search-heading>label{margin:0!important;white-space:nowrap;line-height:16.5px!important}",
+      ".auth-files-card-code-search{box-sizing:border-box;width:100%;height:40px!important;min-height:40px!important;max-height:40px!important;display:block;resize:none;overflow:auto;line-height:1.35;white-space:pre-wrap;font:inherit}",
+      ".auth-files-card-code-search-status{color:var(--text-secondary);min-height:0;margin-top:0;font-size:12px;font-weight:700;line-height:1.4}",
+      ".auth-files-card-code-search-status:empty{display:none}",
       ".auth-files-card-code-search-status.ok{color:var(--success-color)}",
       ".auth-files-card-code-search-status.error{color:var(--error-color)}",
       "@media (max-width:1100px){.auth-file-codex-stats-panel{min-height:0}.auth-file-codex-stat{flex:1 1 132px}}"
@@ -1315,21 +1318,43 @@ const authFileCodexStatsScript = `
     sourceInput.setAttribute("aria-hidden", "true");
     sourceInput.setAttribute("tabindex", "-1");
     var parent = sourceInput.parentElement;
+    var filterItem = sourceInput.closest ? sourceInput.closest("[class*='AuthFilesPage-module__filterItem']") : null;
+    var searchLabel = null;
+    if (filterItem) {
+      var searchLabels = Array.from(filterItem.querySelectorAll("label"));
+      for (var labelIndex = 0; labelIndex < searchLabels.length; labelIndex += 1) {
+        if ((searchLabels[labelIndex].textContent || "").indexOf("搜索配置文件") >= 0) {
+          searchLabel = searchLabels[labelIndex];
+          break;
+        }
+      }
+    }
     var helper = parent.querySelector("#" + CARD_BATCH_SEARCH_INPUT_ID);
     if (!helper) {
       helper = document.createElement("textarea");
       helper.id = CARD_BATCH_SEARCH_INPUT_ID;
-      helper.rows = 2;
+      helper.rows = 1;
       helper.className = String(sourceInput.className || "").replace("auth-files-search-source-hidden", "") + " auth-files-card-code-search";
       helper.placeholder = "输入名称、类型或提供方关键字；也可粘贴卡密，一行一个";
       if (sourceInput.value && sourceInput.value.indexOf(CARD_BATCH_SEARCH_MARKER) !== 0) helper.value = sourceInput.value;
       sourceInput.insertAdjacentElement("afterend", helper);
     }
-    var status = parent.querySelector("#" + CARD_BATCH_SEARCH_STATUS_ID);
+    var status = (filterItem || parent).querySelector("#" + CARD_BATCH_SEARCH_STATUS_ID);
     if (!status) {
       status = document.createElement("div");
       status.id = CARD_BATCH_SEARCH_STATUS_ID;
       status.className = "auth-files-card-code-search-status";
+    }
+    if (searchLabel && filterItem) {
+      var heading = filterItem.querySelector(".auth-files-card-code-search-heading");
+      if (!heading) {
+        heading = document.createElement("div");
+        heading.className = "auth-files-card-code-search-heading";
+        searchLabel.insertAdjacentElement("beforebegin", heading);
+        heading.appendChild(searchLabel);
+      }
+      if (status.parentElement !== heading) heading.appendChild(status);
+    } else if (!status.parentElement) {
       helper.insertAdjacentElement("afterend", status);
     }
     if (helper.dataset.cardBatchBound === "1") return;
