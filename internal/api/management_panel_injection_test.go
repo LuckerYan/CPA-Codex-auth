@@ -120,8 +120,23 @@ func TestPatchAuthFilesExtractionFilters(t *testing.T) {
 	assertContains(t, patched, "unextractedOnly:unextractedOnly")
 	assertContains(t, patched, "codexExtractedFilterMatch")
 	assertContains(t, patched, "codexUnextractedFilterMatch")
+	assertContains(t, patched, "cardBatchActiveForFilters=String(h||``).trim().startsWith(`__codex_card_batch__=`)")
+	assertContains(t, patched, "I.filter(e=>cardBatchActiveForFilters||!")
 	assertContains(t, patched, "extractedOnly&&!codexExtractedFilterMatch(e)")
 	assertContains(t, patched, "unextractedOnly&&!codexUnextractedFilterMatch(e)")
+}
+
+func TestPatchAuthFilesSearchSupportsCodexCardBatchMarker(t *testing.T) {
+	input := []byte("dt=h.trim(),ft=(0,y.useMemo)(()=>Yx(dt),[dt]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r})},[ct,s,dt,ft]),mt=")
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "cardBatchSearchMarker=`__codex_card_batch__=`")
+	assertContains(t, patched, "cardBatchTerms=dt.startsWith(cardBatchSearchMarker)")
+	assertContains(t, patched, "decodeURIComponent(e)")
+	assertContains(t, patched, "[t.name,t.id,t.path,t.email,t.account]")
+	assertContains(t, patched, "n===e||n.includes(e)")
+	assertNotContains(t, patched, "[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r")
 }
 
 func TestPatchAuthFilesCardQuotaRefreshButton(t *testing.T) {
@@ -274,6 +289,26 @@ func TestAuthFileCodexStatsCountsUnextractedOnlyForNormalFiles(t *testing.T) {
 	assertNotContains(t, script, "stats.banned += 1;\n        return;")
 	assertContains(t, script, "未提取=状态正常且尚未分配给用户")
 	assertContains(t, script, "已提取=已分配给用户")
+}
+
+func TestAuthFileCodexStatsAddsCardBatchSearchHelper(t *testing.T) {
+	script := []byte(authFileCodexStatsScript)
+
+	assertContains(t, script, "CARD_BATCH_SEARCH_MARKER = \"__codex_card_batch__=\"")
+	assertContains(t, script, "CARD_BATCH_SEARCH_INPUT_ID = \"auth-file-card-batch-search-input\"")
+	assertContains(t, script, "function ensureCardBatchSearch()")
+	assertContains(t, script, "helper.placeholder = \"输入名称、类型或提供方关键字；也可粘贴卡密，一行一个\"")
+	assertContains(t, script, "function resolveCardBatchSearch(parsed, sourceInput)")
+	assertContains(t, script, "apiFetch(\"/codex-cards\")")
+	assertContains(t, script, "var previousValue = field.value;")
+	assertContains(t, script, "field._valueTracker.setValue(previousValue)")
+	assertContains(t, script, "var target = card.redeemed_file || card.redeemedFile || card.redeemed_auth_id || card.redeemedAuthID || \"\";")
+	assertContains(t, script, "matchedCount")
+	assertContains(t, script, "var encodedSearch = encodeCardBatchSearchTerms(targets);")
+	assertContains(t, script, "setNativeFieldValue(sourceInput, encodedSearch)")
+	assertContains(t, script, "showCardBatchNotice(notices)")
+	assertContains(t, script, "未使用")
+	assertContains(t, script, "ensureCardBatchSearch();")
 }
 
 func TestAuthFileCodexStatsRefreshesAfterQuotaUpdateEvent(t *testing.T) {

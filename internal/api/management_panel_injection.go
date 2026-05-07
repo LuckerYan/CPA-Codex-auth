@@ -126,7 +126,11 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "let st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Vv(e)||d&&e.disabled!==!0)),[d,I,l]),lt=",
-			new: "let codexExtractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!!(e?.codex_redeemed||e?.codex_extracted||e?.redeemed),codexUnextractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!codexExtractedFilterMatch(e)&&String(e?.account_status??e?.accountStatus??e?.status??``).trim().toLowerCase()!==`banned`,st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Vv(e)||d&&e.disabled!==!0||extractedOnly&&!codexExtractedFilterMatch(e)||unextractedOnly&&!codexUnextractedFilterMatch(e))),[d,I,l,extractedOnly,unextractedOnly]),lt=",
+			new: "let codexExtractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!!(e?.codex_redeemed||e?.codex_extracted||e?.redeemed),codexUnextractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!codexExtractedFilterMatch(e)&&String(e?.account_status??e?.accountStatus??e?.status??``).trim().toLowerCase()!==`banned`,cardBatchActiveForFilters=String(h||``).trim().startsWith(`__codex_card_batch__=`),st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>cardBatchActiveForFilters||!(l&&!Vv(e)||d&&e.disabled!==!0||extractedOnly&&!codexExtractedFilterMatch(e)||unextractedOnly&&!codexUnextractedFilterMatch(e))),[d,I,l,extractedOnly,unextractedOnly,cardBatchActiveForFilters]),lt=",
+		},
+		{
+			old: "dt=h.trim(),ft=(0,y.useMemo)(()=>Yx(dt),[dt]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r})},[ct,s,dt,ft]),mt=",
+			new: "dt=h.trim(),cardBatchSearchMarker=`__codex_card_batch__=`,cardBatchTerms=dt.startsWith(cardBatchSearchMarker)?dt.slice(cardBatchSearchMarker.length).split(`|||`).map(e=>{try{return decodeURIComponent(e).trim().toLowerCase()}catch(t){return e.trim().toLowerCase()}}).filter(Boolean):null,ft=(0,y.useMemo)(()=>cardBatchTerms?null:Yx(dt),[dt,cardBatchTerms]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||(cardBatchTerms?cardBatchTerms.some(e=>[t.name,t.id,t.path,t.email,t.account].some(t=>{let n=String(t||``).toLowerCase();return n===e||n.includes(e)})):[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)}));return n&&r})},[ct,s,dt,ft,cardBatchTerms]),mt=",
 		},
 		{
 			old: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=",
@@ -1019,6 +1023,12 @@ const authFileCodexStatsScript = `
   var lastFetchAt = 0;
   var fetching = false;
   var pendingStatsRefresh = false;
+  var CARD_BATCH_SEARCH_MARKER = "__codex_card_batch__=";
+  var CARD_BATCH_SEARCH_DELIMITER = "|||";
+  var CARD_BATCH_SEARCH_INPUT_ID = "auth-file-card-batch-search-input";
+  var CARD_BATCH_SEARCH_STATUS_ID = "auth-file-card-batch-search-status";
+  var cardBatchSearchTimer = 0;
+  var lastCardBatchNotice = "";
 
   function ensureStatsStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -1033,6 +1043,11 @@ const authFileCodexStatsScript = `
       ".auth-file-codex-stat.normal .auth-file-codex-stat-value,.auth-file-codex-stat.unextracted .auth-file-codex-stat-value{color:var(--success-color)}",
       ".auth-file-codex-stat.banned .auth-file-codex-stat-value{color:var(--error-color)}",
       ".auth-file-codex-stat.extracted .auth-file-codex-stat-value{color:var(--primary-color)}",
+      ".auth-files-search-source-hidden{display:none!important}",
+      ".auth-files-card-code-search{box-sizing:border-box;width:100%;min-height:50px;max-height:130px;resize:vertical;line-height:1.35;white-space:pre-wrap;font:inherit}",
+      ".auth-files-card-code-search-status{color:var(--text-secondary);min-height:18px;margin-top:6px;font-size:12px;font-weight:700;line-height:1.4}",
+      ".auth-files-card-code-search-status.ok{color:var(--success-color)}",
+      ".auth-files-card-code-search-status.error{color:var(--error-color)}",
       "@media (max-width:1100px){.auth-file-codex-stats-panel{min-height:0}.auth-file-codex-stat{flex:1 1 132px}}"
     ].join("\n");
     document.head.appendChild(style);
@@ -1093,6 +1108,235 @@ const authFileCodexStatsScript = `
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function cardCodeInputCandidates(trimmed) {
+    var candidates = [trimmed];
+    var markerIndex = trimmed.indexOf("---");
+    if (markerIndex >= 0) {
+      var suffix = trimmed.slice(markerIndex + 3).trim();
+      if (suffix && suffix !== trimmed) candidates.unshift(suffix);
+    }
+    return candidates;
+  }
+
+  function extractCardCodeKeyParam(value) {
+    try {
+      var parsed = new URL(value, window.location.origin);
+      var key = parsed.searchParams.get("key");
+      if (key && key.trim()) return key.trim();
+    } catch (errParse) {}
+    var match = String(value || "").match(/(?:^|[?&#])key=([^&#\s]+)/i);
+    if (match && match[1]) {
+      try {
+        return decodeURIComponent(match[1].replace(/\+/g, " ")).trim();
+      } catch (errDecode) {
+        return match[1].trim();
+      }
+    }
+    return "";
+  }
+
+  function extractCardCodeInput(value) {
+    var trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+    var candidates = cardCodeInputCandidates(trimmed);
+    for (var i = 0; i < candidates.length; i += 1) {
+      var key = extractCardCodeKeyParam(candidates[i]);
+      if (key) return key;
+    }
+    return trimmed;
+  }
+
+  function normalizeCardCodeLookup(value) {
+    return String(extractCardCodeInput(value) || "").trim().toLowerCase();
+  }
+
+  function parseCardBatchSearchInput(value) {
+    var raw = String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    var terms = raw.split("\n").map(function (line) {
+      return {
+        raw: String(line || "").trim(),
+        code: extractCardCodeInput(line)
+      };
+    }).filter(function (item) {
+      return item.code;
+    });
+    return {
+      raw: raw,
+      terms: terms,
+      batch: raw.indexOf("\n") >= 0 && terms.length > 0
+    };
+  }
+
+  function setNativeFieldValue(field, value) {
+    if (!field) return;
+    var previousValue = field.value;
+    var proto = field.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    var descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+    if (descriptor && descriptor.set) descriptor.set.call(field, value);
+    else field.value = value;
+    if (field._valueTracker) {
+      field._valueTracker.setValue(previousValue);
+    }
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    field.dispatchEvent(new Event("change", {bubbles: true}));
+  }
+
+  function setCardBatchStatus(message, type) {
+    var status = document.getElementById(CARD_BATCH_SEARCH_STATUS_ID);
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = "auth-files-card-code-search-status" + (type ? " " + type : "");
+  }
+
+  function encodeCardBatchSearchTerms(terms) {
+    var unique = [];
+    var seen = new Set();
+    (terms || []).forEach(function (term) {
+      var value = String(term || "").trim();
+      var key = value.toLowerCase();
+      if (!value || seen.has(key)) return;
+      seen.add(key);
+      unique.push(encodeURIComponent(value));
+    });
+    return CARD_BATCH_SEARCH_MARKER + unique.join(CARD_BATCH_SEARCH_DELIMITER);
+  }
+
+  function addCardBatchTarget(targets, value) {
+    var trimmed = String(value || "").trim();
+    if (trimmed) targets.push(trimmed);
+  }
+
+  function cardBatchNoticeLine(input, status) {
+    var code = String(input || "").trim();
+    return (code || "-") + "：" + status;
+  }
+
+  function showCardBatchNotice(lines) {
+    if (!lines || lines.length === 0) return;
+    var message = "以下卡密没有对应已提取认证文件：\n" + lines.join("\n");
+    if (message === lastCardBatchNotice) return;
+    lastCardBatchNotice = message;
+    window.alert(message);
+  }
+
+  async function resolveCardBatchSearch(parsed, sourceInput) {
+    setCardBatchStatus("正在按卡密查找对应的认证文件...", "");
+    var data = await apiFetch("/codex-cards");
+    var cards = Array.isArray(data && data.cards) ? data.cards : [];
+    var byCode = new Map();
+    cards.forEach(function (card) {
+      var key = normalizeCardCodeLookup(card && card.code);
+      if (key && !byCode.has(key)) byCode.set(key, card);
+    });
+    var targets = [];
+    var notices = [];
+    (parsed.terms || []).forEach(function (item) {
+      var lookup = normalizeCardCodeLookup(item.code);
+      var card = byCode.get(lookup);
+      var displayCode = item.code || item.raw;
+      if (!card) {
+        notices.push(cardBatchNoticeLine(displayCode, "未找到"));
+        return;
+      }
+      displayCode = card.code || displayCode;
+      var status = String(card.status || "").trim().toLowerCase();
+      if (status === "unused") {
+        notices.push(cardBatchNoticeLine(displayCode, "未使用"));
+        return;
+      }
+      if (status !== "redeemed") {
+        notices.push(cardBatchNoticeLine(displayCode, status || "未使用"));
+        return;
+      }
+      var target = card.redeemed_file || card.redeemedFile || card.redeemed_auth_id || card.redeemedAuthID || "";
+      if (target) {
+        addCardBatchTarget(targets, target);
+      } else {
+        notices.push(cardBatchNoticeLine(displayCode, "已提取但未记录认证文件"));
+      }
+    });
+    var encodedSearch = encodeCardBatchSearchTerms(targets);
+    var matchedCount = encodedSearch === CARD_BATCH_SEARCH_MARKER
+      ? 0
+      : encodedSearch.slice(CARD_BATCH_SEARCH_MARKER.length).split(CARD_BATCH_SEARCH_DELIMITER).filter(Boolean).length;
+    setNativeFieldValue(sourceInput, encodedSearch);
+    if (matchedCount > 0) {
+      setCardBatchStatus("已按卡密匹配到 " + matchedCount + " 个认证文件。", notices.length > 0 ? "error" : "ok");
+    } else {
+      setCardBatchStatus("没有匹配到已提取认证文件。", "error");
+    }
+    showCardBatchNotice(notices);
+  }
+
+  function scheduleCardBatchSearch(helper, sourceInput) {
+    window.clearTimeout(cardBatchSearchTimer);
+    cardBatchSearchTimer = window.setTimeout(function () {
+      var parsed = parseCardBatchSearchInput(helper.value);
+      if (!parsed.raw.trim()) {
+        lastCardBatchNotice = "";
+        setCardBatchStatus("", "");
+        setNativeFieldValue(sourceInput, "");
+        return;
+      }
+      if (!parsed.batch) {
+        lastCardBatchNotice = "";
+        setCardBatchStatus("", "");
+        setNativeFieldValue(sourceInput, parsed.raw.trim());
+        return;
+      }
+      resolveCardBatchSearch(parsed, sourceInput).catch(function (err) {
+        setCardBatchStatus((err && err.message) || String(err), "error");
+      });
+    }, 450);
+  }
+
+  function findAuthFilesSearchInput() {
+    var controls = findFilterControls();
+    if (!controls) return null;
+    var labels = Array.from(controls.querySelectorAll("label"));
+    for (var i = 0; i < labels.length; i += 1) {
+      var label = labels[i];
+      if ((label.textContent || "").indexOf("搜索配置文件") < 0) continue;
+      var box = label.parentElement || controls;
+      var input = box.querySelector("input:not(.auth-files-card-code-search),textarea:not(.auth-files-card-code-search)");
+      if (input) return input;
+    }
+    return controls.querySelector("input[placeholder*='输入名称']:not(.auth-files-card-code-search)");
+  }
+
+  function ensureCardBatchSearch() {
+    if (window.location.hash !== AUTH_FILES_HASH) return;
+    ensureStatsStyles();
+    var sourceInput = findAuthFilesSearchInput();
+    if (!sourceInput || !sourceInput.parentElement) return;
+    sourceInput.classList.add("auth-files-search-source-hidden");
+    sourceInput.setAttribute("aria-hidden", "true");
+    sourceInput.setAttribute("tabindex", "-1");
+    var parent = sourceInput.parentElement;
+    var helper = parent.querySelector("#" + CARD_BATCH_SEARCH_INPUT_ID);
+    if (!helper) {
+      helper = document.createElement("textarea");
+      helper.id = CARD_BATCH_SEARCH_INPUT_ID;
+      helper.rows = 2;
+      helper.className = String(sourceInput.className || "").replace("auth-files-search-source-hidden", "") + " auth-files-card-code-search";
+      helper.placeholder = "输入名称、类型或提供方关键字；也可粘贴卡密，一行一个";
+      if (sourceInput.value && sourceInput.value.indexOf(CARD_BATCH_SEARCH_MARKER) !== 0) helper.value = sourceInput.value;
+      sourceInput.insertAdjacentElement("afterend", helper);
+    }
+    var status = parent.querySelector("#" + CARD_BATCH_SEARCH_STATUS_ID);
+    if (!status) {
+      status = document.createElement("div");
+      status.id = CARD_BATCH_SEARCH_STATUS_ID;
+      status.className = "auth-files-card-code-search-status";
+      helper.insertAdjacentElement("afterend", status);
+    }
+    if (helper.dataset.cardBatchBound === "1") return;
+    helper.dataset.cardBatchBound = "1";
+    helper.addEventListener("input", function () {
+      scheduleCardBatchSearch(helper, sourceInput);
+    });
   }
 
   function numberValue(value) {
@@ -1189,6 +1433,7 @@ const authFileCodexStatsScript = `
         controls.insertBefore(panel, controls.firstChild);
       }
     }
+    ensureCardBatchSearch();
     return panel;
   }
 
@@ -1243,11 +1488,13 @@ const authFileCodexStatsScript = `
 
   function bootAuthFileStats() {
     ensurePanel();
+    ensureCardBatchSearch();
     refreshStats(false);
     if (observerStarted) return;
     observerStarted = true;
     var observer = new MutationObserver(function () {
       ensurePanel();
+      ensureCardBatchSearch();
       refreshStats(false);
     });
     observer.observe(document.body, {childList: true, subtree: true});
