@@ -163,6 +163,15 @@ func TestPatchAuthFilesSearchSupportsCodexCardBatchMarker(t *testing.T) {
 	assertNotContains(t, patched, "[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r")
 }
 
+func TestPatchAuthFilesSearchLabelShowsMatchCountBadge(t *testing.T) {
+	input := []byte("(0,B.jsx)(`label`,{children:e(`auth_files.search_label`)})")
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "(0,B.jsxs)(`label`,{children:[e(`auth_files.search_label`),(0,B.jsx)(`span`,{className:`auth-files-search-match-count ${pt.length===0?`zero`:`active`}`,children:pt.length})]})")
+	assertNotContains(t, patched, "(0,B.jsx)(`label`,{children:e(`auth_files.search_label`)})")
+}
+
 func TestPatchAuthFilesCardQuotaRefreshButton(t *testing.T) {
 	input := []byte(
 		"function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=" +
@@ -328,6 +337,9 @@ func TestAuthFileCodexStatsAddsCardBatchSearchHelper(t *testing.T) {
 	assertContains(t, script, "CARD_BATCH_SEARCH_INPUT_ID = \"auth-file-card-batch-search-input\"")
 	assertContains(t, script, "function ensureCardBatchSearch()")
 	assertContains(t, script, "helper.placeholder = \"输入名称、类型或提供方关键字；也可粘贴卡密，一行一个\"")
+	assertNotContains(t, script, "正在按卡密查找对应的认证文件")
+	assertNotContains(t, script, "已按卡密匹配到")
+	assertNotContains(t, script, "没有匹配到已提取认证文件")
 	assertContains(t, script, "height:40px!important;min-height:40px!important;max-height:40px!important")
 	assertContains(t, script, "helper.rows = 1;")
 	assertContains(t, script, "auth-files-card-code-search-heading")
@@ -350,8 +362,17 @@ func TestAuthFileCodexStatsAddsCardBatchSearchHelper(t *testing.T) {
 	assertContains(t, script, "isCardBatchSearchValue(sourceInput.value)")
 	assertContains(t, script, "clearStaleCardBatchSearch(sourceInput, helper);")
 	assertContains(t, script, "showCardBatchNotice(notices)")
+	assertNotContains(t, script, "window.alert(message)")
 	assertContains(t, script, "未使用")
 	assertContains(t, script, "ensureCardBatchSearch();")
+}
+
+func TestAuthFileCodexStatsAddsSearchMatchBadgeStyles(t *testing.T) {
+	script := []byte(codexCardManagementPanelScript)
+
+	assertContains(t, script, ".auth-files-search-match-count{margin-left:8px;min-width:20px;height:20px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:800;line-height:1;display:inline-grid;place-items:center}")
+	assertContains(t, script, ".auth-files-search-match-count.zero{background:color-mix(in srgb,var(--text-secondary) 18%,transparent);color:var(--text-secondary)}")
+	assertContains(t, script, ".auth-files-search-match-count.active{background:color-mix(in srgb,var(--success-color) 18%,transparent);color:var(--success-color)}")
 }
 
 func TestAuthFileCodexStatsRefreshesAfterQuotaUpdateEvent(t *testing.T) {

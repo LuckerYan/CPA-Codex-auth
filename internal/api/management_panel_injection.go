@@ -133,6 +133,10 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			new: "dt=h.trim(),cardBatchSearchMarker=`__codex_card_batch__=`,cardBatchTerms=dt.startsWith(cardBatchSearchMarker)?dt.slice(cardBatchSearchMarker.length).split(`|||`).map(e=>{try{return decodeURIComponent(e).trim().toLowerCase()}catch(t){return e.trim().toLowerCase()}}).filter(Boolean):null,ft=(0,y.useMemo)(()=>cardBatchTerms?null:Yx(dt),[dt,cardBatchTerms]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||(cardBatchTerms?cardBatchTerms.some(e=>[t.name,t.id,t.path,t.email,t.account].some(t=>{let n=String(t||``).toLowerCase();return n===e||n.includes(e)})):[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)}));return n&&r})},[ct,s,dt,ft,cardBatchTerms]),mt=",
 		},
 		{
+			old: "(0,B.jsx)(`label`,{children:e(`auth_files.search_label`)})",
+			new: "(0,B.jsxs)(`label`,{children:[e(`auth_files.search_label`),(0,B.jsx)(`span`,{className:`auth-files-search-match-count ${pt.length===0?`zero`:`active`}`,children:pt.length})]})",
+		},
+		{
 			old: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=",
 			new: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,refreshQuotaNotify=hc(e=>e.showNotification),codexQuotaForCard=np(e=>e.codexQuota[n.name]),setCodexQuotaForCard=np(e=>e.setCodexQuota),refreshCodexQuotaForCard=async()=>{if(o||Kv(n)||n.disabled||codexQuotaForCard?.status===`loading`)return;let e=Xb(`codex`);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildLoadingState()}));try{let r=await e.fetchQuota(n,t);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildSuccessState(r)})),refreshQuotaNotify(t(`auth_files.quota_refresh_success`,{name:n.name}),`success`)}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);setCodexQuotaForCard(t=>({...t,[n.name]:Xb(`codex`).buildErrorState(r,i)})),refreshQuotaNotify(t(`auth_files.quota_refresh_failed`,{name:n.name,message:r}),`error`) }},_=",
 		},
@@ -293,6 +297,9 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .auth-files-display-options-trigger::marker{content:"";font-size:0}
 .auth-files-display-options-menu[open] .auth-files-display-options-trigger{border-color:var(--primary-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-color) 16%,transparent)}
 .auth-files-display-options-count{background:color-mix(in srgb,var(--primary-color) 18%,transparent);color:var(--primary-color);border-radius:999px;min-width:20px;height:20px;place-items:center;padding:0 6px;font-size:11px;font-weight:800;line-height:1;display:inline-grid}
+.auth-files-search-match-count{margin-left:8px;min-width:20px;height:20px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:800;line-height:1;display:inline-grid;place-items:center}
+.auth-files-search-match-count.zero{background:color-mix(in srgb,var(--text-secondary) 18%,transparent);color:var(--text-secondary)}
+.auth-files-search-match-count.active{background:color-mix(in srgb,var(--success-color) 18%,transparent);color:var(--success-color)}
 .auth-files-display-options-chevron{display:inline-flex;flex:none;align-items:center;justify-content:center;width:12px;height:12px;background:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22M3 4.75 6 7.75 9 4.75%22 stroke=%22%238b8680%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E') center/12px 12px no-repeat;font-size:0;line-height:0;transition:transform .15s;transform-origin:center}
 .auth-files-display-options-menu[open] .auth-files-display-options-chevron{transform:rotate(180deg)}
 .auth-files-display-options-list{z-index:40;position:absolute;top:calc(100% + 8px);left:0;right:auto;box-sizing:border-box;width:100%;min-width:0;border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:12px;padding:6px;box-shadow:0 16px 38px color-mix(in srgb,#000 20%,transparent);display:grid!important;gap:3px!important;min-height:0!important}
@@ -1222,12 +1229,7 @@ const authFileCodexStatsScript = `
     field.dispatchEvent(new Event("change", {bubbles: true}));
   }
 
-  function setCardBatchStatus(message, type) {
-    var status = document.getElementById(CARD_BATCH_SEARCH_STATUS_ID);
-    if (!status) return;
-    status.textContent = message || "";
-    status.className = "auth-files-card-code-search-status" + (type ? " " + type : "");
-  }
+  function setCardBatchStatus(message, type) {}
 
   function clearStaleCardBatchSearch(sourceInput, helper) {
     if (!sourceInput || !isCardBatchSearchValue(sourceInput.value)) return;
@@ -1259,16 +1261,9 @@ const authFileCodexStatsScript = `
     return (code || "-") + "：" + status;
   }
 
-  function showCardBatchNotice(lines) {
-    if (!lines || lines.length === 0) return;
-    var message = "以下卡密没有对应已提取认证文件：\n" + lines.join("\n");
-    if (message === lastCardBatchNotice) return;
-    lastCardBatchNotice = message;
-    window.alert(message);
-  }
+  function showCardBatchNotice(lines) {}
 
   async function resolveCardBatchSearch(parsed, sourceInput) {
-    setCardBatchStatus("正在按卡密查找对应的认证文件...", "");
     var data = await apiFetch("/codex-cards");
     var cards = Array.isArray(data && data.cards) ? data.cards : [];
     var byCode = new Map();
@@ -1308,11 +1303,6 @@ const authFileCodexStatsScript = `
       ? 0
       : encodedSearch.slice(CARD_BATCH_SEARCH_MARKER.length).split(CARD_BATCH_SEARCH_DELIMITER).filter(Boolean).length;
     setNativeFieldValue(sourceInput, encodedSearch);
-    if (matchedCount > 0) {
-      setCardBatchStatus("已按卡密匹配到 " + matchedCount + " 个认证文件。", notices.length > 0 ? "error" : "ok");
-    } else {
-      setCardBatchStatus("没有匹配到已提取认证文件。", "error");
-    }
     showCardBatchNotice(notices);
   }
 
@@ -1322,18 +1312,16 @@ const authFileCodexStatsScript = `
       var parsed = parseCardBatchSearchInput(helper.value);
       if (!parsed.raw.trim()) {
         lastCardBatchNotice = "";
-        setCardBatchStatus("", "");
         setNativeFieldValue(sourceInput, "");
         return;
       }
       if (!shouldResolveCardBatchSearch(parsed)) {
         lastCardBatchNotice = "";
-        setCardBatchStatus("", "");
         setNativeFieldValue(sourceInput, parsed.raw.trim());
         return;
       }
       resolveCardBatchSearch(parsed, sourceInput).catch(function (err) {
-        setCardBatchStatus((err && err.message) || String(err), "error");
+        console.error(err && err.message ? err.message : err);
       });
     }, 450);
   }
