@@ -31,15 +31,16 @@ import (
 )
 
 const (
-	codexCardStoreFileName        = ".codex-card-store.db"
-	codexCardStatusUnused         = "unused"
-	codexCardStatusRedeemed       = "redeemed"
-	codexCardStatusDisabled       = "disabled"
-	codexValidationModel          = "gpt-5.4-mini"
-	codexValidationConcurrencyCap = 16
-	codexQuotaUsageURL            = "https://chatgpt.com/backend-api/wham/usage"
-	codexQuotaUserAgent           = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal"
-	codexExtractSummaryHeader     = "X-Codex-Extract-Summary"
+	codexCardStoreFileName         = ".codex-card-store.db"
+	codexCardStatusUnused          = "unused"
+	codexCardStatusRedeemed        = "redeemed"
+	codexCardStatusDisabled        = "disabled"
+	codexValidationModel           = "gpt-5.4-mini"
+	codexExtractDefaultConcurrency = 10
+	codexExtractMaxConcurrency     = 64
+	codexQuotaUsageURL             = "https://chatgpt.com/backend-api/wham/usage"
+	codexQuotaUserAgent            = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal"
+	codexExtractSummaryHeader      = "X-Codex-Extract-Summary"
 )
 
 var codexCardStores sync.Map
@@ -90,10 +91,11 @@ type codexCardImportRequest struct {
 }
 
 type codexAuthExtractRequest struct {
-	Codes  string   `json:"codes"`
-	Cards  string   `json:"cards"`
-	Items  []string `json:"items"`
-	Format string   `json:"format"`
+	Codes       string   `json:"codes"`
+	Cards       string   `json:"cards"`
+	Items       []string `json:"items"`
+	Format      string   `json:"format"`
+	Concurrency int      `json:"concurrency"`
 }
 
 type codexExtractSummary struct {
@@ -1198,6 +1200,37 @@ func writeCodexExtractDownloadResponse(c *gin.Context, fileName, contentType str
 	})
 }
 
+func normalizeCodexExtractConcurrency(raw int) int {
+	if raw <= 0 {
+		return codexExtractDefaultConcurrency
+	}
+	if raw > codexExtractMaxConcurrency {
+		return codexExtractMaxConcurrency
+	}
+	return raw
+}
+
+func codexExtractConcurrency(values ...int) int {
+	if len(values) == 0 {
+		return codexExtractDefaultConcurrency
+	}
+	return normalizeCodexExtractConcurrency(values[0])
+}
+
+func codexExtractWorkerCount(total int, concurrency int) int {
+	if total <= 0 {
+		return 0
+	}
+	workers := normalizeCodexExtractConcurrency(concurrency)
+	if workers > total {
+		workers = total
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	return workers
+}
+
 func (h *Handler) GenerateCodexCards(c *gin.Context) {
 	if h == nil || h.cfg == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "management config unavailable"})
@@ -1486,6 +1519,7 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errFormat.Error()})
 		return
 	}
+	concurrency := normalizeCodexExtractConcurrency(req.Concurrency)
 	rawCardCodes := splitCodexCardExtractInput(req)
 	if len(rawCardCodes) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no card codes supplied"})
@@ -1526,7 +1560,7 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		})
 		return
 	}
-	selected, errSelect := h.selectCodexAuthCandidates(c.Request.Context(), candidates, len(availableCodes))
+	selected, errSelect := h.selectCodexAuthCandidates(c.Request.Context(), candidates, len(availableCodes), concurrency)
 	if errSelect != nil {
 		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes...)
 		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
@@ -1547,7 +1581,7 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 	if len(selected) < len(availableCodes) {
 		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes[len(selected):]...)
 	}
-	files, errLoad := h.loadCodexAuthFiles(selected)
+	files, errLoad := h.loadCodexAuthFiles(selected, concurrency)
 	if errLoad != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errLoad.Error()})
 		return
@@ -1560,7 +1594,7 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 	switch format {
 	case "sub":
 		var errSub error
-		bodyBytes, downloadName, errSub = buildCodexAuthSubJSONWithContext(c.Request.Context(), h, files)
+		bodyBytes, downloadName, errSub = buildCodexAuthSubJSONWithContext(c.Request.Context(), h, files, concurrency)
 		if errSub != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": errSub.Error()})
 			return
@@ -1686,7 +1720,7 @@ func resolveCodexAuthPath(auth *coreauth.Auth, authDir string) string {
 	return filepath.Join(authDir, fileName)
 }
 
-func (h *Handler) selectCodexAuthCandidates(ctx context.Context, candidates []codexAuthCandidate, limit int) ([]codexAuthCandidate, error) {
+func (h *Handler) selectCodexAuthCandidates(ctx context.Context, candidates []codexAuthCandidate, limit int, concurrency ...int) ([]codexAuthCandidate, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("requested card count must be greater than zero")
 	}
@@ -1700,13 +1734,7 @@ func (h *Handler) selectCodexAuthCandidates(ctx context.Context, candidates []co
 	defer cancel()
 
 	jobs := make(chan codexAuthCandidate)
-	workerCount := len(candidates)
-	if workerCount > codexValidationConcurrencyCap {
-		workerCount = codexValidationConcurrencyCap
-	}
-	if workerCount < 1 {
-		workerCount = 1
-	}
+	workerCount := codexExtractWorkerCount(len(candidates), codexExtractConcurrency(concurrency...))
 
 	var (
 		mu           sync.Mutex
@@ -2020,26 +2048,65 @@ func codexAuthInvalidationMessage(err error) string {
 	return coreauth.TokenInvalidatedMessage(err)
 }
 
-func (h *Handler) loadCodexAuthFiles(candidates []codexAuthCandidate) ([]codexSelectedAuth, error) {
+func (h *Handler) loadCodexAuthFiles(candidates []codexAuthCandidate, concurrency ...int) ([]codexSelectedAuth, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no codex auth candidates selected")
 	}
-	out := make([]codexSelectedAuth, 0, len(candidates))
-	for _, candidate := range candidates {
+	out := make([]codexSelectedAuth, len(candidates))
+	workerCount := codexExtractWorkerCount(len(candidates), codexExtractConcurrency(concurrency...))
+	jobs := make(chan int)
+	var (
+		mu       sync.Mutex
+		firstErr error
+		errIndex = len(candidates)
+		wg       sync.WaitGroup
+	)
+	setError := func(index int, err error) {
+		if err == nil {
+			return
+		}
+		mu.Lock()
+		if firstErr == nil || index < errIndex {
+			firstErr = err
+			errIndex = index
+		}
+		mu.Unlock()
+	}
+	loadOne := func(index int) {
+		candidate := candidates[index]
 		if strings.TrimSpace(candidate.FilePath) == "" {
-			return nil, fmt.Errorf("auth file path is empty for %s", candidate.ID)
+			setError(index, fmt.Errorf("auth file path is empty for %s", candidate.ID))
+			return
 		}
 		data, errRead := os.ReadFile(candidate.FilePath)
 		if errRead != nil {
-			return nil, fmt.Errorf("read auth file %s: %w", candidate.FilePath, errRead)
+			setError(index, fmt.Errorf("read auth file %s: %w", candidate.FilePath, errRead))
+			return
 		}
-		out = append(out, codexSelectedAuth{
+		out[index] = codexSelectedAuth{
 			AuthID:          candidate.ID,
 			FilePath:        candidate.FilePath,
 			FileName:        candidate.FileName,
 			Data:            data,
 			ReservationKeys: append([]string(nil), candidate.ReservationKeys...),
-		})
+		}
+	}
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				loadOne(index)
+			}
+		}()
+	}
+	for i := range candidates {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
 	}
 	return out, nil
 }
@@ -2060,17 +2127,81 @@ func buildCodexAuthSubJSON(files []codexSelectedAuth) ([]byte, string, error) {
 	return buildCodexAuthSubJSONWithContext(context.Background(), nil, files)
 }
 
-func buildCodexAuthSubJSONWithContext(ctx context.Context, h *Handler, files []codexSelectedAuth) ([]byte, string, error) {
+func buildCodexAuthSubJSONWithContext(ctx context.Context, h *Handler, files []codexSelectedAuth, concurrency ...int) ([]byte, string, error) {
 	if len(files) == 0 {
 		return nil, "", fmt.Errorf("no codex auth files selected")
 	}
-	accounts := make([]codexSubAccount, 0, len(files))
-	for _, file := range files {
-		account, errAccount := codexSelectedAuthToSubAccountWithContext(ctx, h, file)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	accounts := make([]codexSubAccount, len(files))
+	workerCount := codexExtractWorkerCount(len(files), codexExtractConcurrency(concurrency...))
+	jobs := make(chan int)
+	var (
+		mu       sync.Mutex
+		firstErr error
+		errIndex = len(files)
+		workerWG sync.WaitGroup
+	)
+	setError := func(index int, err error) {
+		if err == nil {
+			return
+		}
+		mu.Lock()
+		if firstErr == nil || index < errIndex {
+			firstErr = err
+			errIndex = index
+			cancel()
+		}
+		mu.Unlock()
+	}
+	for i := 0; i < workerCount; i++ {
+		workerWG.Add(1)
+		go func() {
+			defer workerWG.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case index, ok := <-jobs:
+					if !ok {
+						return
+					}
+					account, errAccount := codexSelectedAuthToSubAccountWithContext(ctx, h, files[index])
+					if errAccount != nil {
+						setError(index, errAccount)
+						return
+					}
+					accounts[index] = account
+				}
+			}
+		}()
+	}
+dispatch:
+	for i := range files {
+		select {
+		case <-ctx.Done():
+			break dispatch
+		case jobs <- i:
+		}
+	}
+	close(jobs)
+	workerWG.Wait()
+	if firstErr != nil {
+		return nil, "", firstErr
+	}
+	for i := range accounts {
+		if strings.TrimSpace(accounts[i].Name) != "" {
+			continue
+		}
+		account, errAccount := codexSelectedAuthToSubAccountWithContext(ctx, h, files[i])
 		if errAccount != nil {
 			return nil, "", errAccount
 		}
-		accounts = append(accounts, account)
+		accounts[i] = account
 	}
 	sort.SliceStable(accounts, func(i, j int) bool {
 		left := strings.ToLower(strings.TrimSpace(accounts[i].Name))

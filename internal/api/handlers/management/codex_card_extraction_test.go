@@ -368,6 +368,73 @@ func TestValidateCodexAuthCandidatesSearchesConcurrentlyWhenNeedIsOne(t *testing
 	}
 }
 
+func TestNormalizeCodexExtractConcurrencyDefaultsToTen(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  int
+		want int
+	}{
+		{name: "zero", raw: 0, want: 10},
+		{name: "negative", raw: -1, want: 10},
+		{name: "valid", raw: 2, want: 2},
+		{name: "clamped", raw: 99, want: 64},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeCodexExtractConcurrency(tt.raw); got != tt.want {
+				t.Fatalf("normalizeCodexExtractConcurrency(%d) = %d, want %d", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractCodexAuthFilesUsesRequestedConcurrency(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	executor := &fakeCodexValidationExecutor{invalid: map[string]bool{}, delay: 40 * time.Millisecond}
+	manager.RegisterExecutor(executor)
+
+	codes := make([]string, 0, 6)
+	for i := 0; i < 6; i++ {
+		name := fmt.Sprintf("codex-%d.json", i)
+		path := writeTestCodexAuthFile(t, authDir, name, fmt.Sprintf("user-%d@example.com", i))
+		registerTestCodexAuth(t, manager, name, path)
+		codes = append(codes, fmt.Sprintf("card-%d", i))
+	}
+	store, err := getCodexCardStore(authDir)
+	if err != nil {
+		t.Fatalf("get card store: %v", err)
+	}
+	if _, _, _, errImport := store.importCodes(codes); errImport != nil {
+		t.Fatalf("import cards: %v", errImport)
+	}
+
+	body, errMarshal := json.Marshal(codexAuthExtractRequest{Items: codes, Concurrency: 2})
+	if errMarshal != nil {
+		t.Fatalf("marshal request: %v", errMarshal)
+	}
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/codex-extract", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if maxActive := atomic.LoadInt32(&executor.maxActive); maxActive != 2 {
+		t.Fatalf("expected requested concurrency 2, max active=%d", maxActive)
+	}
+}
+
 func TestExtractCodexAuthFilesReturnsZipAndRedeemsCards(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	authDir := t.TempDir()
@@ -820,6 +887,45 @@ func TestExtractCodexAuthFilesReturnsSubJSONAndRedeemsCards(t *testing.T) {
 	}
 	if len(cards) != 1 || cards[0].Status != codexCardStatusRedeemed {
 		t.Fatalf("expected card to be redeemed after sub export, got %+v", cards)
+	}
+}
+
+func TestBuildCodexAuthSubJSONUsesConcurrentUsageFetch(t *testing.T) {
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	executor := &fakeCodexValidationExecutor{invalid: map[string]bool{}, delay: 40 * time.Millisecond}
+	manager.RegisterExecutor(executor)
+
+	files := make([]codexSelectedAuth, 0, 5)
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("codex-sub-%d.json", i)
+		path := writeTestCodexAuthFile(t, authDir, name, fmt.Sprintf("sub-%d@example.com", i))
+		registerTestCodexAuth(t, manager, name, path)
+		data, errRead := os.ReadFile(path)
+		if errRead != nil {
+			t.Fatalf("read auth file %s: %v", path, errRead)
+		}
+		files = append(files, codexSelectedAuth{
+			AuthID:   name,
+			FilePath: path,
+			FileName: filepath.Base(path),
+			Data:     data,
+		})
+	}
+	h := &Handler{
+		cfg:         &config.Config{AuthDir: authDir},
+		authManager: manager,
+	}
+
+	body, downloadName, errBuild := buildCodexAuthSubJSONWithContext(context.Background(), h, files, 5)
+	if errBuild != nil {
+		t.Fatalf("build sub json: %v", errBuild)
+	}
+	if len(body) == 0 || !strings.Contains(downloadName, "sub2api-account-") {
+		t.Fatalf("unexpected sub export result name=%q len=%d", downloadName, len(body))
+	}
+	if maxActive := atomic.LoadInt32(&executor.maxActive); maxActive < 2 {
+		t.Fatalf("expected concurrent usage fetch during sub export, max active=%d", maxActive)
 	}
 }
 

@@ -316,12 +316,17 @@ const codexExtractionPageHTML = `<!doctype html>
       }
     }
 
-    function startProgress(totalCount, formatLabel) {
+    function getExtractConcurrency() {
+      return 10;
+    }
+
+    function startProgress(totalCount, formatLabel, concurrency) {
       if (!(progressShell && progressTrack && progressFill && progressStage && progressPercent)) return;
       stopProgressTimers();
       progressValue = 8;
       progressTarget = totalCount > 6 ? 82 : 88;
-      renderProgress(progressValue, totalCount > 1 ? '验活中 · ' + totalCount + ' 项 · 准备 ' + formatLabel + '…' : '验活中 · 准备 ' + formatLabel + '…', 'busy');
+      var concurrencyText = concurrency > 1 ? ' · 并发 ' + concurrency : '';
+      renderProgress(progressValue, totalCount > 1 ? '验活中 · ' + totalCount + ' 项' + concurrencyText + ' · 准备 ' + formatLabel + '…' : '验活中' + concurrencyText + ' · 准备 ' + formatLabel + '…', 'busy');
       progressTimer = setInterval(function () {
         if (progressValue >= progressTarget) return;
         var step = progressValue < 30 ? 6 : progressValue < 70 ? 3 : 1;
@@ -594,12 +599,13 @@ const codexExtractionPageHTML = `<!doctype html>
       setButtonBusy(true);
       var format = getSelectedFormat();
       var formatLabel = format === 'sub' ? 'SUB JSON' : 'CPA ZIP';
-      startProgress(codes.length, formatLabel);
+      var concurrency = getExtractConcurrency();
+      startProgress(codes.length, formatLabel, concurrency);
       try {
         var resp = await fetch('/v0/codex-extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: codes, format: format })
+          body: JSON.stringify({ items: codes, format: format, concurrency: concurrency })
         });
         if (!resp.ok) {
           var err = await readError(resp);
