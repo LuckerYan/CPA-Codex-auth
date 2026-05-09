@@ -1171,6 +1171,26 @@ const authFileCodexStatsScript = `
     return String(extractCardCodeInput(value) || "").trim().toLowerCase();
   }
 
+  function isCardBatchSearchValue(value) {
+    return String(value || "").trim().indexOf(CARD_BATCH_SEARCH_MARKER) === 0;
+  }
+
+  function isLikelyCardCodeTerm(item) {
+    if (!item) return false;
+    var raw = String(item.raw || "").trim();
+    var code = String(item.code || "").trim();
+    if (!code) return false;
+    if (raw.indexOf("---") >= 0 || extractCardCodeKeyParam(raw)) return true;
+    return /^(?:et[_-]|cdx-|card-)[^\s]+$/i.test(code);
+  }
+
+  function shouldResolveCardBatchSearch(parsed) {
+    var terms = parsed && Array.isArray(parsed.terms) ? parsed.terms : [];
+    if (terms.length === 0) return false;
+    if (parsed.batch) return true;
+    return terms.length === 1 && isLikelyCardCodeTerm(terms[0]);
+  }
+
   function parseCardBatchSearchInput(value) {
     var raw = String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     var terms = raw.split("\n").map(function (line) {
@@ -1207,6 +1227,13 @@ const authFileCodexStatsScript = `
     if (!status) return;
     status.textContent = message || "";
     status.className = "auth-files-card-code-search-status" + (type ? " " + type : "");
+  }
+
+  function clearStaleCardBatchSearch(sourceInput, helper) {
+    if (!sourceInput || !isCardBatchSearchValue(sourceInput.value)) return;
+    if (helper && String(helper.value || "").trim()) return;
+    setCardBatchStatus("", "");
+    setNativeFieldValue(sourceInput, "");
   }
 
   function encodeCardBatchSearchTerms(terms) {
@@ -1299,7 +1326,7 @@ const authFileCodexStatsScript = `
         setNativeFieldValue(sourceInput, "");
         return;
       }
-      if (!parsed.batch) {
+      if (!shouldResolveCardBatchSearch(parsed)) {
         lastCardBatchNotice = "";
         setCardBatchStatus("", "");
         setNativeFieldValue(sourceInput, parsed.raw.trim());
@@ -1352,9 +1379,10 @@ const authFileCodexStatsScript = `
       helper.rows = 1;
       helper.className = String(sourceInput.className || "").replace("auth-files-search-source-hidden", "") + " auth-files-card-code-search";
       helper.placeholder = "输入名称、类型或提供方关键字；也可粘贴卡密，一行一个";
-      if (sourceInput.value && sourceInput.value.indexOf(CARD_BATCH_SEARCH_MARKER) !== 0) helper.value = sourceInput.value;
+      if (sourceInput.value && !isCardBatchSearchValue(sourceInput.value)) helper.value = sourceInput.value;
       sourceInput.insertAdjacentElement("afterend", helper);
     }
+    clearStaleCardBatchSearch(sourceInput, helper);
     var status = (filterItem || parent).querySelector("#" + CARD_BATCH_SEARCH_STATUS_ID);
     if (!status) {
       status = document.createElement("div");
