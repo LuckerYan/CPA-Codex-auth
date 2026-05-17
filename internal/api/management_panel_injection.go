@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -137,8 +138,8 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			new: "(0,B.jsxs)(`label`,{children:[e(`auth_files.search_label`),(0,B.jsx)(`span`,{className:`auth-files-search-match-count ${pt.length===0?`zero`:`active`}`,children:pt.length})]})",
 		},
 		{
-			old: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=",
-			new: "function ex(e){let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,refreshQuotaNotify=hc(e=>e.showNotification),codexQuotaForCard=np(e=>e.codexQuota[n.name]),setCodexQuotaForCard=np(e=>e.setCodexQuota),refreshCodexQuotaForCard=async()=>{if(o||Kv(n)||n.disabled||codexQuotaForCard?.status===`loading`)return;let e=Xb(`codex`);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildLoadingState()}));try{let r=await e.fetchQuota(n,t);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildSuccessState(r)})),refreshQuotaNotify(t(`auth_files.quota_refresh_success`,{name:n.name}),`success`)}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);setCodexQuotaForCard(t=>({...t,[n.name]:Xb(`codex`).buildErrorState(r,i)})),refreshQuotaNotify(t(`auth_files.quota_refresh_failed`,{name:n.name,message:r}),`error`) }},_=",
+			old: "let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,_=",
+			new: "let{t}=qo(),{file:n,compact:r,selected:i,resolvedTheme:a,disableControls:o,deleting:s,statusUpdating:c,quotaFilterType:l,statusBarCache:u,onShowModels:d,onDownload:f,onOpenPrefixProxyEditor:p,onDelete:m,onToggleStatus:h,onToggleSelect:g}=e,refreshQuotaNotify=hc(e=>e.showNotification),codexQuotaForCard=np(e=>e.codexQuota[n.name]),setCodexQuotaForCard=np(e=>e.setCodexQuota),refreshCodexQuotaForCard=async()=>{if(o||Kv(n)||n.disabled||codexQuotaForCard?.status===`loading`)return;let e=Xb(`codex`);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildLoadingState()}));try{let r=await e.fetchQuota(n,t);setCodexQuotaForCard(t=>({...t,[n.name]:e.buildSuccessState(r)})),refreshQuotaNotify(t(`auth_files.quota_refresh_success`,{name:n.name}),`success`)}catch(e){let r=e instanceof Error?e.message:t(`common.unknown_error`),i=Ry(e);setCodexQuotaForCard(t=>({...t,[n.name]:Xb(`codex`).buildErrorState(r,i)})),refreshQuotaNotify(t(`auth_files.quota_refresh_failed`,{name:n.name,message:r}),`error`) }},_=",
 		},
 		{
 			old: "!y&&(0,B.jsxs)(`div`,{className:G.statusToggle,children:[(0,B.jsx)(`span`,{className:G.statusToggleLabel,children:t(`auth_files.status_toggle_label`)}),(0,B.jsx)(Sg,{ariaLabel:t(`auth_files.status_toggle_label`),checked:!n.disabled,disabled:o||c[n.name]===!0,onChange:e=>h(n,e)})]})",
@@ -157,16 +158,16 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			new: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`details`,{className:`auth-files-display-options-menu`,children:[(0,B.jsxs)(`summary`,{className:`auth-files-display-options-trigger`,children:[(0,B.jsx)(`span`,{children:e(`auth_files.display_options_label`)}),(l||d||extractedOnly||unextractedOnly||p)&&(0,B.jsx)(`span`,{className:`auth-files-display-options-count`,children:(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(p?1:0)}),(0,B.jsx)(`span`,{className:`auth-files-display-options-chevron`,children:`⌄`})]}),(0,B.jsxs)(`div`,{className:`${G.filterToggleGroup} auth-files-display-options-list`,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:unextractedOnly,onChange:e=>{setUnextractedOnly(e),e&&setExtractedOnly(!1),v(1)},ariaLabel:`仅显示未提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示未提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:extractedOnly,onChange:e=>{setExtractedOnly(e),e&&setUnextractedOnly(!1),v(1)},ariaLabel:`仅显示已提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示已提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})]})",
 		},
 		{
-			old: "function _x(){let{t:e}=qo(),{showNotification:t,showConfirmation:n}=hc(),[r,i]=(0,y.useState)([]),",
-			new: "function _x(){let{t:e}=qo(),{showNotification:t,showConfirmation:n}=hc(),refreshSelectedQuotaSetter=np(e=>e.setCodexQuota),[r,i]=(0,y.useState)([]),",
+			old: "let{t:e}=qo(),{showNotification:t,showConfirmation:n}=hc(),[r,i]=(0,y.useState)([]),",
+			new: "let{t:e}=qo(),{showNotification:t,showConfirmation:n}=hc(),refreshSelectedQuotaSetter=np(e=>e.setCodexQuota),[r,i]=(0,y.useState)([]),",
 		},
 		{
 			old: "handleStatusToggle:F,toggleSelect:T,selectAllVisible:E,invertVisibleSelection:D,deselectAll:O,batchDownload:(0,y.useCallback)(async n=>{",
 			new: "handleStatusToggle:F,toggleSelect:T,selectAllVisible:E,invertVisibleSelection:D,deselectAll:O,batchRefreshQuota:(0,y.useCallback)(async n=>{let a=Array.from(new Set(n)),o=new Set(a),s=r.filter(n=>o.has(n.name)&&String(n.type||n.provider||``).trim().toLowerCase()===`codex`&&!Kv(n)&&n.disabled!==!0);if(s.length===0){t(`没有可刷新额度的 Codex 认证文件`,`warning`);return}let c=Xb(`codex`),l=Math.max(1,Math.min(10,Math.floor(Number(window.__CPA_QUOTA_REFRESH_CONCURRENCY)||10))),u=0,d=0,f=0;refreshSelectedQuotaSetter(e=>{let t={...e};return s.forEach(e=>{t[e.name]=c.buildLoadingState()}),t});let p=async()=>{for(;;){let n=u++;if(n>=s.length)return;let r=s[n];try{let n=await c.fetchQuota(r,e);d++,refreshSelectedQuotaSetter(e=>({...e,[r.name]:c.buildSuccessState(n)}))}catch(n){f++;let i=n instanceof Error?n.message:e(`common.unknown_error`),a=Ry(n);refreshSelectedQuotaSetter(e=>({...e,[r.name]:c.buildErrorState(i,a)}))}}};await Promise.all(Array.from({length:Math.min(l,s.length)},()=>p())),f===0?t(`已并行刷新 ${d} 个认证文件额度`,`success`):t(`额度刷新完成：成功 ${d} 个，失败 ${f} 个`,`warning`),typeof window<`u`&&window.dispatchEvent(new CustomEvent(`cli-proxy-auth-files-updated`,{detail:{source:`selected-quota-refresh`,type:`codex`,scope:`selected`}}))},[r,t,e,refreshSelectedQuotaSetter]),batchDownload:(0,y.useCallback)(async n=>{",
 		},
 		{
-			old: "batchDownload:ye,batchSetStatus:be,batchDelete:xe}=_x(),",
-			new: "batchRefreshQuota:refreshSelectedQuota,batchDownload:ye,batchSetStatus:be,batchDelete:xe}=_x(),",
+			old: "batchDownload:ye,batchSetStatus:be,batchDelete:xe}=",
+			new: "batchRefreshQuota:refreshSelectedQuota,batchDownload:ye,batchSetStatus:be,batchDelete:xe}=",
 		},
 		{
 			old: "children:[(0,B.jsx)(V,{variant:`secondary`,size:`sm`,onClick:()=>void ye(xt),disabled:Qe||xt.length===0,children:e(`auth_files.batch_download`)}),",
@@ -187,10 +188,58 @@ func patchQuotaManagementPanel(data []byte) []byte {
 	}
 
 	patched := data
+
+	// The upstream bundler renames minified identifiers between releases, so the
+	// problematic-card detector ("Vv=e=>Bv(e).length>0") and its caller may use
+	// fresh names. Detect them dynamically and rewrite affected patches so they
+	// keep matching after upstream re-minification.
+	problemDetectorRE := regexp.MustCompile(`([A-Za-z_$][\w$]*)=e=>([A-Za-z_$][\w$]*)\(e\)\.length>0`)
+	if m := problemDetectorRE.FindSubmatch(patched); len(m) == 3 {
+		vvName := string(m[1])
+		bvName := string(m[2])
+		if vvName != "Vv" || bvName != "Bv" {
+			for i := range replacements {
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Vv", vvName)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Vv", vvName)
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Bv", bvName)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Bv", bvName)
+			}
+		}
+	}
+
 	for _, replacement := range replacements {
 		patched = bytes.Replace(patched, []byte(replacement.old), []byte(replacement.new), 1)
 	}
 	return patched
+}
+
+// renameQuotaPanelIdent rewrites only the identifier-shaped occurrences of old in s.
+// Identifier boundary = the character before/after is not part of a JS identifier.
+func renameQuotaPanelIdent(s, old, new string) string {
+	if old == new || !strings.Contains(s, old) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if strings.HasPrefix(s[i:], old) {
+			prevOK := i == 0 || !isJSIdentChar(s[i-1])
+			nextIdx := i + len(old)
+			nextOK := nextIdx >= len(s) || !isJSIdentChar(s[nextIdx])
+			if prevOK && nextOK {
+				b.WriteString(new)
+				i = nextIdx
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+func isJSIdentChar(c byte) bool {
+	return c == '_' || c == '$' || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
 const codexCardManagementPanelScript = `
