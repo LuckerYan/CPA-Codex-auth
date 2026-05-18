@@ -1,6 +1,7 @@
 package management
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,6 +39,23 @@ func (h *Handler) ServeCodexExtractionPage(c *gin.Context) {
 			return
 		} else if err != nil && !os.IsNotExist(err) {
 			log.WithError(err).Warn("falling back to inline codex extraction page")
+		}
+
+		// Lazily fetch the standalone asset on first miss. Mirrors how
+		// management.html bootstraps itself in server.serveManagementControlPanel.
+		if h != nil && h.cfg != nil {
+			staticDir := managementasset.StaticDir(codexExtractionConfigFilePath())
+			if managementasset.EnsureLatestCodexExtractionHTML(
+				context.Background(),
+				staticDir,
+				h.cfg.ProxyURL,
+				h.cfg.RemoteManagement.PanelGitHubRepository,
+			) {
+				if data, err := os.ReadFile(filePath); err == nil && len(data) > 0 {
+					c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+					return
+				}
+			}
 		}
 	}
 
