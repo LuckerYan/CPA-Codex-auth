@@ -207,6 +207,52 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		}
 	}
 
+	// The notification store hook (originally `hc`) may be re-minified to a
+	// different short identifier between upstream releases. Detect its current
+	// name from the {showNotification:_,showConfirmation:_}=X() destructure
+	// pattern and rewrite affected patches so the `hc(...)` references stay
+	// aligned with the runtime identifier.
+	notifStoreRE := regexp.MustCompile(`\{showNotification:[A-Za-z_$][\w$]*,showConfirmation:[A-Za-z_$][\w$]*\}=([A-Za-z_$][\w$]*)\(\)`)
+	if m := notifStoreRE.FindSubmatch(patched); len(m) == 2 {
+		hcName := string(m[1])
+		if hcName != "hc" {
+			for i := range replacements {
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "hc", hcName)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "hc", hcName)
+			}
+		}
+	}
+
+	// The auth-file card CSS-module styles object (originally bound to `G`)
+	// can be re-minified to a different short identifier across upstream
+	// releases. Detect the actual binding from `className:X.statusToggle,`
+	// and rewrite affected patches so card-level styling patches keep
+	// applying after re-minification.
+	cardStylesRE := regexp.MustCompile(`className:([A-Za-z_$][\w$]*)\.statusToggle,`)
+	if m := cardStylesRE.FindSubmatch(patched); len(m) == 2 {
+		gName := string(m[1])
+		if gName != "G" {
+			for i := range replacements {
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "G", gName)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "G", gName)
+			}
+		}
+	}
+
+	// The ToggleSwitch component (originally bound to `Sg`) can be renamed
+	// across releases. Detect its actual identifier from a stable call site
+	// using the status_toggle_label aria text, then rewrite patches.
+	toggleCompRE := regexp.MustCompile(`\(0,B\.jsx\)\(([A-Za-z_$][\w$]*),\{ariaLabel:t\(` + "`" + `auth_files\.status_toggle_label` + "`" + `\)`)
+	if m := toggleCompRE.FindSubmatch(patched); len(m) == 2 {
+		sgName := string(m[1])
+		if sgName != "Sg" {
+			for i := range replacements {
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Sg", sgName)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Sg", sgName)
+			}
+		}
+	}
+
 	for _, replacement := range replacements {
 		patched = bytes.Replace(patched, []byte(replacement.old), []byte(replacement.new), 1)
 	}
@@ -583,11 +629,13 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-bulk-actions .codex-card-admin-button.icon-only{width:40px;min-width:40px;min-height:40px;padding:0;gap:0;flex:0 0 auto}
 .codex-card-admin-bulk-actions .codex-card-admin-button.icon-only svg{width:17px;height:17px;display:block}
 .AuthFilesPage-module__filterControls___PfZDU{grid-template-columns:minmax(240px,420px) minmax(86px,132px) minmax(128px,168px) minmax(144px,168px)!important;align-items:start!important;justify-content:start}
+.AuthFilesPage-module__filterControlsPanel___V-IZn{overflow:visible!important}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o{width:100%;max-width:100%}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(1){max-width:420px}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(2){max-width:132px}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(3){max-width:168px}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__filterItem___Kko4o:nth-child(4){max-width:168px}
+.AuthFilesPage-module__filterControls___PfZDU [class*="filterToggleItem"]{grid-column:auto!important}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__pageSizeSelect___yEBvp{width:100%;min-width:0}
 .AuthFilesPage-module__filterControls___PfZDU .AuthFilesPage-module__sortSelect___4fEjm{width:100%;min-width:0}
 .auth-files-display-options-menu{position:relative;width:100%;max-width:168px}
