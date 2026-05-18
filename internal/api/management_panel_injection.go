@@ -212,7 +212,131 @@ func patchQuotaManagementPanel(data []byte) []byte {
 	}
 	patched = patchAuthFilesFilterFallback(patched)
 	patched = patchAuthFilesSearchFallback(patched)
+	patched = patchQuotaTooManyThresholdFallback(patched)
+	patched = patchQuotaPageSizeInputFallback(patched)
+	patched = patchQuotaLoadConcurrencyFallback(patched)
 	return patched
+}
+
+// patchQuotaTooManyThresholdFallback bumps the "too many files" warning
+// threshold so the quota page no longer prompts users with a dialog when they
+// switch to "show all". Upstream defines the constant as `var <pb>=25,<mb>=30,`
+// where the identifiers get renamed across releases (e.g. pb→hb, mb→gb), so we
+// detect the pair dynamically and only rewrite the numeric value.
+func patchQuotaTooManyThresholdFallback(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	re := regexp.MustCompile(`var (\w+)=25,(\w+)=30,`)
+	loc := re.FindSubmatchIndex(data)
+	if loc == nil {
+		return data
+	}
+	pageSizeIdent := string(data[loc[2]:loc[3]])
+	tooManyIdent := string(data[loc[4]:loc[5]])
+	replacement := []byte("var " + pageSizeIdent + "=25," + tooManyIdent + "=1e6,")
+	out := make([]byte, 0, len(data)+len(replacement))
+	out = append(out, data[:loc[0]]...)
+	out = append(out, replacement...)
+	out = append(out, data[loc[1]:]...)
+	return out
+}
+
+// patchQuotaLoadConcurrencyFallback caps the concurrency of the bulk
+// "refresh all credentials" call. Upstream's loadQuota fires Promise.all(n.map(
+// async n => fetchQuota(n,t))), which becomes O(N) parallel HTTP requests and
+// freezes the UI when N is large. We rewrite the inner Promise.all into a
+// worker-pool that runs at most __CPA_QUOTA_REFRESH_CONCURRENCY in flight
+// (default 8). The error-name identifier (By) is captured dynamically so the
+// rewrite survives upstream re-minification.
+func patchQuotaLoadConcurrencyFallback(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	if bytes.Contains(data, []byte("/*__cpaQuotaConcurrentMap*/")) {
+		return data
+	}
+	bt := "`"
+	pattern := `let i=await Promise\.all\(n\.map\(async n=>\{try\{let r=await e\.fetchQuota\(n,t\);return\{name:n\.name,status:` + bt + `success` + bt + `,data:r\}\}catch\(e\)\{let r=e instanceof Error\?e\.message:t\(` + bt + `common\.unknown_error` + bt + `\),i=(\w+)\(e\);return\{name:n\.name,status:` + bt + `error` + bt + `,error:r,errorStatus:i\}\}\}\)\);`
+	re := regexp.MustCompile(pattern)
+	loc := re.FindSubmatchIndex(data)
+	if loc == nil {
+		return data
+	}
+	byName := string(data[loc[2]:loc[3]])
+	replacement := []byte(
+		"let i=await(async()=>{let _res=new Array(n.length),_x=0," +
+			"_l=Math.min(Math.max(1,Number((typeof window!==" + bt + "u" + bt + "&&window.__CPA_QUOTA_REFRESH_CONCURRENCY)||8)),n.length||1);" +
+			"async function _w(){while(true){let _i=_x++;if(_i>=n.length)return;let _s=n[_i];" +
+			"try{let _o=await e.fetchQuota(_s,t);_res[_i]={name:_s.name,status:" + bt + "success" + bt + ",data:_o};" +
+			"if(c===a.current)r(_n=>({..._n,[_s.name]:e.buildSuccessState(_o)}))}" +
+			"catch(_o){let _u=_o instanceof Error?_o.message:t(" + bt + "common.unknown_error" + bt + "),_f=" + byName + "(_o);" +
+			"_res[_i]={name:_s.name,status:" + bt + "error" + bt + ",error:_u,errorStatus:_f};" +
+			"if(c===a.current)r(_n=>({..._n,[_s.name]:e.buildErrorState(_u,_f)}))}}}" +
+			"await Promise.all(Array.from({length:_l},()=>_w()));return _res})();/*__cpaQuotaConcurrentMap*/",
+	)
+	out := make([]byte, 0, len(data)+len(replacement))
+	out = append(out, data[:loc[0]]...)
+	out = append(out, replacement...)
+	out = append(out, data[loc[1]:]...)
+	return out
+}
+
+// patchQuotaPageSizeInputFallback restores the custom "page size" numeric
+// input next to the view-mode toggle on the quota page. The literal patches
+// above stop matching when upstream renames the CSS-module ident (sb→lb) or
+// the page-size hook (fb→mb). This fallback re-injects the [q,z] state, the
+// page-size useEffect, and the input element, capturing the dynamic CSS-module
+// and pageSize-constant idents from the existing bundle.
+func patchQuotaPageSizeInputFallback(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	if bytes.Contains(data, []byte("[q,z]=(0,y.useState)(``)")) {
+		return data
+	}
+	bt := "`"
+
+	// 1) inject [q,z]=useState("") right before [f,p]=useState(!1)
+	old1 := []byte("[u,d]=(0,y.useState)(" + bt + "paged" + bt + "),[f,p]=(0,y.useState)(!1),m=")
+	new1 := []byte("[u,d]=(0,y.useState)(" + bt + "paged" + bt + "),[q,z]=(0,y.useState)(" + bt + bt + "),[f,p]=(0,y.useState)(!1),m=")
+	if !bytes.Contains(data, old1) {
+		return data
+	}
+	rewrote := bytes.Replace(data, old1, new1, 1)
+
+	// 2) rewrite the pageSize useEffect to honour custom q value
+	re2 := regexp.MustCompile(`,\(0,y\.useEffect\)\(\(\)=>\{S\(g===` + bt + `all` + bt + `\?Math\.max\(1,m\.length\):Math\.min\(c\*3,(\w+)\)\)\},\[g,c,m\.length,S\]\);`)
+	loc2 := re2.FindSubmatchIndex(rewrote)
+	if loc2 == nil {
+		return data
+	}
+	pgIdent := string(rewrote[loc2[2]:loc2[3]])
+	new2 := []byte(";let qn=Math.min(c*3," + pgIdent + "),zn=(()=>{let e=Number(q);return!Number.isFinite(e)||e<=0?null:Math.max(1,Math.min(Math.round(e),Math.max(m.length," + pgIdent + ")))})();(0,y.useEffect)(()=>{if(g===" + bt + "all" + bt + "){S(Math.max(1,m.length));return}S(zn??qn)},[g,m.length,zn,qn,S]);")
+	buf := make([]byte, 0, len(rewrote)+len(new2))
+	buf = append(buf, rewrote[:loc2[0]]...)
+	buf = append(buf, new2...)
+	buf = append(buf, rewrote[loc2[1]:]...)
+	rewrote = buf
+
+	// 3) simplify batch-download row to always emit the full set
+	old3 := []byte("let t=g===" + bt + "all" + bt + "?" + bt + "all" + bt + ":" + bt + "page" + bt + ",r=g===" + bt + "all" + bt + "?m:x;r.length!==0&&O(r,t,E)")
+	new3 := []byte("let t=m;t.length!==0&&O(t," + bt + "all" + bt + ",E)")
+	rewrote = bytes.Replace(rewrote, old3, new3, 1)
+
+	// 4) insert <input> before viewModeToggle — capture the dynamic css-module
+	re4 := regexp.MustCompile(`children:\[\(0,B\.jsxs\)\(` + bt + `div` + bt + `,\{className:(\w+)\.viewModeToggle,children:\[`)
+	loc4 := re4.FindSubmatchIndex(rewrote)
+	if loc4 == nil {
+		return rewrote
+	}
+	cssIdent := string(rewrote[loc4[2]:loc4[3]])
+	new4 := []byte("children:[g===" + bt + "paged" + bt + "&&(0,B.jsx)(" + bt + "input" + bt + ",{className:" + cssIdent + ".pageSizeSelect,style:{width:160},type:" + bt + "number" + bt + ",min:" + bt + "1" + bt + ",step:" + bt + "1" + bt + ",inputMode:" + bt + "numeric" + bt + ",value:q||String(_),title:i(" + bt + "auth_files.page_size_label" + bt + `),"aria-label":i(` + bt + "auth_files.page_size_label" + bt + "),onFocus:()=>d(" + bt + "paged" + bt + "),onChange:e=>{d(" + bt + "paged" + bt + "),z(e.target.value.replace(/[^0-9]/g," + bt + bt + "))}}),(0,B.jsxs)(" + bt + "div" + bt + ",{className:" + cssIdent + ".viewModeToggle,children:[")
+	buf2 := make([]byte, 0, len(rewrote)+len(new4))
+	buf2 = append(buf2, rewrote[:loc4[0]]...)
+	buf2 = append(buf2, new4...)
+	buf2 = append(buf2, rewrote[loc4[1]:]...)
+	return buf2
 }
 
 // patchAuthFilesFilterFallback handles the case where the upstream React bundle
