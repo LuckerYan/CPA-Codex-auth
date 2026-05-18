@@ -1570,3 +1570,232 @@ func makeTestJWT(t *testing.T, claims map[string]any) string {
 	}
 	return base64.RawURLEncoding.EncodeToString(headerData) + "." + base64.RawURLEncoding.EncodeToString(claimsData) + ".signature"
 }
+
+// registerTestCodexAuthWithPlan registers a Codex auth record whose metadata
+// carries the requested plan_type so the extraction flow treats it as a Plus
+// or Free candidate. Pass an empty planType to omit the field (treated as
+// Free by the matcher).
+func registerTestCodexAuthWithPlan(t *testing.T, manager *coreauth.Manager, id, path, planType string) {
+	t.Helper()
+	fileName := filepath.Base(path)
+	accountID := "account-" + fileName
+	metadata := map[string]any{
+		"type":         "codex",
+		"account_id":   accountID,
+		"access_token": "access-" + fileName,
+	}
+	if pt := strings.TrimSpace(planType); pt != "" {
+		metadata["plan_type"] = pt
+	}
+	if _, err := manager.Register(context.Background(), &coreauth.Auth{
+		ID:         id,
+		Provider:   "codex",
+		FileName:   fileName,
+		Status:     coreauth.StatusActive,
+		Attributes: map[string]string{"path": path},
+		Metadata:   metadata,
+	}); err != nil {
+		t.Fatalf("register auth %s: %v", id, err)
+	}
+	registry.GetGlobalRegistry().RegisterClient(id, "codex", []*registry.ModelInfo{{ID: codexValidationModel}})
+	t.Cleanup(func() { registry.GetGlobalRegistry().UnregisterClient(id) })
+}
+
+// TestExtractCodexAuthFilesPlusCardRejectsWhenOnlyFreeAuthExists verifies that
+// a Plus card cannot consume a Free auth file: extraction must report the
+// "对应类型(Plus)认证文件不足" failure and leave the card unused.
+func TestExtractCodexAuthFilesPlusCardRejectsWhenOnlyFreeAuthExists(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	freePath := writeTestCodexAuthFile(t, authDir, "codex-free.json", "free@example.com")
+	registerTestCodexAuthWithPlan(t, manager, "codex-free.json", freePath, "")
+
+	store, errStore := getCodexCardStore(authDir)
+	if errStore != nil {
+		t.Fatalf("get card store: %v", errStore)
+	}
+	plusCards, errGen := store.generate(1, codexCardTypePlus)
+	if errGen != nil {
+		t.Fatalf("generate plus card: %v", errGen)
+	}
+	plusCode := plusCards[0].Code
+
+	h := &Handler{cfg: &config.Config{AuthDir: authDir}, authManager: manager}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/v0/management/codex-extract",
+		strings.NewReader(fmt.Sprintf(`{"items":[%q]}`, plusCode)),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when only Free auth is available, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Error   string              `json:"error"`
+		Summary codexExtractSummary `json:"summary"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode body: %v body=%s", err, w.Body.String())
+	}
+	if !codexExtractSummaryHasFailure(resp.Summary, "对应类型(Plus)认证文件不足", plusCode) {
+		t.Fatalf("expected Plus failure group for code=%s, got %+v", plusCode, resp.Summary)
+	}
+
+	cards, errList := store.list()
+	if errList != nil {
+		t.Fatalf("list cards: %v", errList)
+	}
+	for _, card := range cards {
+		if card.Code == plusCode && card.Status != codexCardStatusUnused {
+			t.Fatalf("plus card should remain unused after failed extract, got %q", card.Status)
+		}
+	}
+}
+
+// TestExtractCodexAuthFilesFreeCardRejectsWhenOnlyPlusAuthExists is the
+// symmetric guard: a Free card cannot consume a Plus auth file.
+func TestExtractCodexAuthFilesFreeCardRejectsWhenOnlyPlusAuthExists(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	plusPath := writeTestCodexAuthFile(t, authDir, "codex-plus.json", "plus@example.com")
+	registerTestCodexAuthWithPlan(t, manager, "codex-plus.json", plusPath, "plus")
+
+	store, errStore := getCodexCardStore(authDir)
+	if errStore != nil {
+		t.Fatalf("get card store: %v", errStore)
+	}
+	freeCards, errGen := store.generate(1, codexCardTypeFree)
+	if errGen != nil {
+		t.Fatalf("generate free card: %v", errGen)
+	}
+	freeCode := freeCards[0].Code
+
+	h := &Handler{cfg: &config.Config{AuthDir: authDir}, authManager: manager}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/v0/management/codex-extract",
+		strings.NewReader(fmt.Sprintf(`{"items":[%q]}`, freeCode)),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when only Plus auth is available, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Error   string              `json:"error"`
+		Summary codexExtractSummary `json:"summary"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode body: %v body=%s", err, w.Body.String())
+	}
+	if !codexExtractSummaryHasFailure(resp.Summary, "对应类型(Free)认证文件不足", freeCode) {
+		t.Fatalf("expected Free failure group for code=%s, got %+v", freeCode, resp.Summary)
+	}
+
+	cards, errList := store.list()
+	if errList != nil {
+		t.Fatalf("list cards: %v", errList)
+	}
+	for _, card := range cards {
+		if card.Code == freeCode && card.Status != codexCardStatusUnused {
+			t.Fatalf("free card should remain unused after failed extract, got %q", card.Status)
+		}
+	}
+}
+
+// TestExtractCodexAuthFilesMixedPoolMatchesByCardType ensures Plus cards
+// receive Plus auth files and Free cards receive Free auth files when both
+// pools are present in the same extraction request.
+func TestExtractCodexAuthFilesMixedPoolMatchesByCardType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	manager.RegisterExecutor(&fakeCodexValidationExecutor{invalid: map[string]bool{}})
+
+	plusPath := writeTestCodexAuthFile(t, authDir, "codex-plus.json", "plus@example.com")
+	freePath := writeTestCodexAuthFile(t, authDir, "codex-free.json", "free@example.com")
+	registerTestCodexAuthWithPlan(t, manager, "codex-plus.json", plusPath, "plus")
+	registerTestCodexAuthWithPlan(t, manager, "codex-free.json", freePath, "")
+
+	store, errStore := getCodexCardStore(authDir)
+	if errStore != nil {
+		t.Fatalf("get card store: %v", errStore)
+	}
+	plusCards, errGenP := store.generate(1, codexCardTypePlus)
+	if errGenP != nil {
+		t.Fatalf("generate plus card: %v", errGenP)
+	}
+	freeCards, errGenF := store.generate(1, codexCardTypeFree)
+	if errGenF != nil {
+		t.Fatalf("generate free card: %v", errGenF)
+	}
+	plusCode := plusCards[0].Code
+	freeCode := freeCards[0].Code
+
+	h := &Handler{cfg: &config.Config{AuthDir: authDir}, authManager: manager}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/v0/management/codex-extract",
+		strings.NewReader(fmt.Sprintf(`{"items":[%q,%q]}`, plusCode, freeCode)),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.ExtractCodexAuthFiles(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if contentType := w.Header().Get("Content-Type"); !strings.Contains(contentType, "application/zip") {
+		t.Fatalf("expected zip content type, got %q", contentType)
+	}
+	zipReader, errZip := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+	if errZip != nil {
+		t.Fatalf("read zip: %v", errZip)
+	}
+	got := make(map[string]bool, len(zipReader.File))
+	for _, f := range zipReader.File {
+		got[f.Name] = true
+	}
+	for _, name := range []string{"codex-plus.json", "codex-free.json"} {
+		if !got[name] {
+			t.Fatalf("expected zip entry %s, got %+v", name, got)
+		}
+	}
+
+	cards, errList := store.list()
+	if errList != nil {
+		t.Fatalf("list cards: %v", errList)
+	}
+	byCode := make(map[string]*codexCardRecord, len(cards))
+	for i := range cards {
+		byCode[cards[i].Code] = cards[i]
+	}
+	plusCard, okP := byCode[plusCode]
+	if !okP {
+		t.Fatalf("plus card not found after extract")
+	}
+	if plusCard.Status != codexCardStatusRedeemed || plusCard.RedeemedFile != "codex-plus.json" {
+		t.Fatalf("plus card should redeem Plus auth, got status=%q file=%q", plusCard.Status, plusCard.RedeemedFile)
+	}
+	freeCard, okF := byCode[freeCode]
+	if !okF {
+		t.Fatalf("free card not found after extract")
+	}
+	if freeCard.Status != codexCardStatusRedeemed || freeCard.RedeemedFile != "codex-free.json" {
+		t.Fatalf("free card should redeem Free auth, got status=%q file=%q", freeCard.Status, freeCard.RedeemedFile)
+	}
+}
