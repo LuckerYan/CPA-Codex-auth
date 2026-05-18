@@ -300,6 +300,8 @@ const codexCardManagementPanelScript = `
   var codexPageActive = window.location.hash === PAGE_HASH;
   var allCards = [];
   var currentCards = [];
+  var CARDS_PAGE_SIZE = 50;
+  var currentCardsPage = 1;
 
   function iconSVG() {
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.72" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" focusable="false" stroke-miterlimit="10" width="18" height="18"><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4Z" fill="currentColor" fill-opacity="0.10"></path><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg>';
@@ -351,13 +353,20 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-list-head{align-items:flex-start;justify-content:space-between;gap:16px;display:flex}
 .codex-card-admin-list-head-text{min-width:0}
 .codex-card-admin-table-wrap{border:1px solid var(--border-color);border-radius:14px;overflow:auto}
-.codex-card-admin-table{width:100%;min-width:1080px;border-collapse:collapse;font-size:13px}
+.codex-card-admin-table{width:100%;min-width:880px;border-collapse:collapse;font-size:13px}
 .codex-card-admin-table th,.codex-card-admin-table td{border-bottom:1px solid var(--border-color);padding:11px 12px;text-align:left;vertical-align:top}
 .codex-card-admin-table th{color:var(--text-secondary);background:color-mix(in srgb,var(--bg-tertiary) 78%,transparent);font-size:12px;font-weight:800}
 .codex-card-admin-table tr:last-child td{border-bottom:0}
 .codex-card-admin-table th.select,.codex-card-admin-table td.select{width:48px;text-align:center;vertical-align:middle}
-.codex-card-admin-table th.time,.codex-card-admin-table td.time{min-width:142px;white-space:nowrap}
+.codex-card-admin-table th.time,.codex-card-admin-table td.time{min-width:160px;white-space:nowrap}
 .codex-card-admin-table th.file,.codex-card-admin-table td.file{min-width:150px}
+.codex-card-admin-time-stack{display:flex;flex-direction:column;gap:4px;line-height:1.35}
+.codex-card-admin-time-row{display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.codex-card-admin-time-row .codex-card-admin-time-tag{color:var(--text-secondary);font-size:10.5px;font-weight:800;letter-spacing:.4px;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--text-secondary) 12%,transparent);text-transform:uppercase;flex-shrink:0}
+.codex-card-admin-time-row.created .codex-card-admin-time-tag{color:var(--text-primary);background:color-mix(in srgb,var(--text-primary) 10%,transparent)}
+.codex-card-admin-time-row.redeemed .codex-card-admin-time-tag{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 14%,transparent)}
+.codex-card-admin-time-row.empty .codex-card-admin-time-value{color:color-mix(in srgb,var(--text-secondary) 60%,transparent)}
+.codex-card-admin-time-value{color:var(--text-primary);font-size:12.5px;font-weight:700}
 .codex-card-admin-checkbox{appearance:none;width:17px;height:17px;margin:0;border:1px solid var(--border-color);background:var(--bg-primary);border-radius:5px;cursor:pointer;display:inline-grid;place-content:center;transition:background .15s,border-color .15s,box-shadow .15s}
 .codex-card-admin-checkbox:checked{background:var(--primary-color);border-color:var(--primary-color)}
 .codex-card-admin-checkbox:checked:after{content:"";width:8px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
@@ -370,6 +379,15 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-type-pill.plus{color:#d97f00;background:color-mix(in srgb,#ffb547 14%,transparent);border-color:color-mix(in srgb,#ffb547 50%,var(--border-color))}
 .codex-card-admin-type-pill.free{color:#5d728f;background:color-mix(in srgb,#7c93b5 12%,transparent);border-color:color-mix(in srgb,#7c93b5 50%,var(--border-color))}
 .codex-card-admin-empty{color:var(--text-secondary);padding:26px;text-align:center}
+.codex-card-admin-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border:1px solid var(--border-color);background:color-mix(in srgb,var(--bg-secondary) 70%,transparent);border-radius:12px}
+.codex-card-admin-pagination-info{color:var(--text-secondary);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.codex-card-admin-pagination-info strong{color:var(--text-primary);font-weight:800;margin:0 2px}
+.codex-card-admin-pagination-controls{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.codex-card-admin-page-button{min-width:34px;height:32px;padding:0 10px;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);border-radius:8px;font:inherit;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s,color .15s}
+.codex-card-admin-page-button:hover:not(:disabled):not(.active){border-color:color-mix(in srgb,var(--primary-color) 50%,var(--border-color));background:color-mix(in srgb,var(--primary-color) 8%,var(--bg-primary))}
+.codex-card-admin-page-button:disabled{opacity:.45;cursor:not-allowed}
+.codex-card-admin-page-button.active{background:var(--primary-color);border-color:var(--primary-color);color:#fff;cursor:default}
+.codex-card-admin-page-ellipsis{min-width:24px;color:var(--text-secondary);font-size:12px;font-weight:800;text-align:center;user-select:none}
 .codex-card-admin-link{color:var(--text-primary);text-decoration:none;border-bottom:1px solid var(--border-color)}
 .codex-card-admin-bulkbar{border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:14px;align-items:center;justify-content:flex-start;gap:12px;margin:14px 0 14px;padding:14px;display:flex;flex-wrap:wrap}
 .codex-card-admin-search{min-width:260px;flex:1 1 420px;max-width:520px}
@@ -644,7 +662,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       </div>
       <div class="codex-card-admin-bulkbar">
         <div class="codex-card-admin-search">
-          <textarea class="codex-card-admin-input codex-card-admin-search-textarea" id="codexCardSearchInput" rows="1" placeholder="搜索卡密、状态、来源、提取时间或兑换文件；批量搜索：一行一个卡密"></textarea>
+          <textarea class="codex-card-admin-input codex-card-admin-search-textarea" id="codexCardSearchInput" rows="1" placeholder="搜索卡密、状态、时间或兑换文件；批量搜索：一行一个卡密"></textarea>
         </div>
         <span class="codex-card-admin-selection" id="codexCardSelectionStatus">已选择 0 个</span>
         <span class="codex-card-admin-bulk-spacer" aria-hidden="true"></span>
@@ -873,6 +891,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
   }
 
   function applyCardSearch() {
+    currentCardsPage = 1;
     renderTable(filteredCards());
   }
 
@@ -883,11 +902,91 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     return { value: "free", label: "Free" };
   }
 
+  function renderTimeCell(card) {
+    var redeemedAt = cardRedeemedAtValue(card);
+    var createdText = formatDate(card.created_at);
+    var redeemedText = redeemedAt ? formatDate(redeemedAt) : "";
+    var redeemedClass = "codex-card-admin-time-row redeemed" + (redeemedText ? "" : " empty");
+    return '<div class="codex-card-admin-time-stack">' +
+      '<div class="codex-card-admin-time-row created"><span class="codex-card-admin-time-tag">创建</span><span class="codex-card-admin-time-value">' + escapeHTML(createdText || "-") + '</span></div>' +
+      '<div class="' + redeemedClass + '"><span class="codex-card-admin-time-tag">提取</span><span class="codex-card-admin-time-value">' + escapeHTML(redeemedText || "未提取") + '</span></div>' +
+    '</div>';
+  }
+
+  function totalCardsPages(total) {
+    if (!total || total <= 0) return 1;
+    return Math.max(1, Math.ceil(total / CARDS_PAGE_SIZE));
+  }
+
+  function buildPageNumbers(current, total) {
+    if (total <= 7) {
+      var arr = [];
+      for (var i = 1; i <= total; i += 1) arr.push(i);
+      return arr;
+    }
+    var pages = [1];
+    var start = Math.max(2, current - 1);
+    var end = Math.min(total - 1, current + 1);
+    if (current <= 3) { start = 2; end = 4; }
+    if (current >= total - 2) { start = total - 3; end = total - 1; }
+    if (start > 2) pages.push("…");
+    for (var j = start; j <= end; j += 1) pages.push(j);
+    if (end < total - 1) pages.push("…");
+    pages.push(total);
+    return pages;
+  }
+
+  function renderPagination(totalCount) {
+    var totalPages = totalCardsPages(totalCount);
+    if (currentCardsPage > totalPages) currentCardsPage = totalPages;
+    if (currentCardsPage < 1) currentCardsPage = 1;
+    if (totalCount <= 0) return "";
+    var rangeStart = (currentCardsPage - 1) * CARDS_PAGE_SIZE + 1;
+    var rangeEnd = Math.min(totalCount, currentCardsPage * CARDS_PAGE_SIZE);
+    var info = '共 <strong>' + totalCount + '</strong> 个 · 第 <strong>' + rangeStart + '-' + rangeEnd + '</strong> 条 · 第 <strong>' + currentCardsPage + ' / ' + totalPages + '</strong> 页';
+    var buttons = '<button class="codex-card-admin-page-button" data-page="prev" type="button"' + (currentCardsPage <= 1 ? " disabled" : "") + '>上一页</button>';
+    buildPageNumbers(currentCardsPage, totalPages).forEach(function (entry) {
+      if (entry === "…") {
+        buttons += '<span class="codex-card-admin-page-ellipsis">…</span>';
+        return;
+      }
+      var active = entry === currentCardsPage ? " active" : "";
+      buttons += '<button class="codex-card-admin-page-button' + active + '" data-page="' + entry + '" type="button">' + entry + '</button>';
+    });
+    buttons += '<button class="codex-card-admin-page-button" data-page="next" type="button"' + (currentCardsPage >= totalPages ? " disabled" : "") + '>下一页</button>';
+    return '<div class="codex-card-admin-pagination">' +
+      '<div class="codex-card-admin-pagination-info">' + info + '</div>' +
+      '<div class="codex-card-admin-pagination-controls">' + buttons + '</div>' +
+    '</div>';
+  }
+
+  function bindPagination(totalCount) {
+    var totalPages = totalCardsPages(totalCount);
+    document.querySelectorAll(".codex-card-admin-page-button").forEach(function (node) {
+      node.addEventListener("click", function () {
+        var raw = node.getAttribute("data-page");
+        var target = currentCardsPage;
+        if (raw === "prev") target = Math.max(1, currentCardsPage - 1);
+        else if (raw === "next") target = Math.min(totalPages, currentCardsPage + 1);
+        else target = Math.max(1, Math.min(totalPages, Number(raw) || 1));
+        if (target === currentCardsPage) return;
+        currentCardsPage = target;
+        renderTable(filteredCards());
+      });
+    });
+  }
+
   function renderTable(cards) {
     var wrap = document.getElementById("codexCardTableWrap");
     if (!wrap) return;
-    currentCards = Array.isArray(cards) ? cards : [];
-    if (!cards || cards.length === 0) {
+    var allFiltered = Array.isArray(cards) ? cards : [];
+    var totalPages = totalCardsPages(allFiltered.length);
+    if (currentCardsPage > totalPages) currentCardsPage = totalPages;
+    if (currentCardsPage < 1) currentCardsPage = 1;
+    var startIdx = (currentCardsPage - 1) * CARDS_PAGE_SIZE;
+    var pageCards = allFiltered.slice(startIdx, startIdx + CARDS_PAGE_SIZE);
+    currentCards = pageCards;
+    if (!allFiltered || allFiltered.length === 0) {
       var searchInput = document.getElementById("codexCardSearchInput");
       var search = parseCardSearch(searchInput ? searchInput.value : "");
       var statusFilter = selectedStatusFilter();
@@ -902,14 +1001,14 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       updateSelectionControls();
       return;
     }
-    wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>类型</th><th>状态</th><th>来源</th><th class="time">创建时间</th><th class="time">提取时间</th><th class="file">兑换文件</th></tr></thead><tbody>' + cards.map(function (card) {
+    wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>类型</th><th>状态</th><th class="time">时间</th><th class="file">兑换文件</th></tr></thead><tbody>' + pageCards.map(function (card) {
       var status = card.status || "";
       var file = card.redeemed_file ? '<span class="codex-card-admin-code">' + escapeHTML(card.redeemed_file) + '</span>' : "-";
-      var redeemedAt = cardRedeemedAtValue(card);
       var typeInfo = cardTypeLabel(card);
-      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-type-pill ' + escapeHTML(typeInfo.value) + '">' + escapeHTML(typeInfo.label) + '</span></td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td>' + escapeHTML(card.source || "-") + '</td><td class="time">' + escapeHTML(formatDate(card.created_at)) + '</td><td class="time">' + escapeHTML(formatDate(redeemedAt)) + '</td><td class="file">' + file + '</td></tr>';
-    }).join("") + '</tbody></table>';
+      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-type-pill ' + escapeHTML(typeInfo.value) + '">' + escapeHTML(typeInfo.label) + '</span></td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td class="time">' + renderTimeCell(card) + '</td><td class="file">' + file + '</td></tr>';
+    }).join("") + '</tbody></table>' + renderPagination(allFiltered.length);
     bindTableSelection();
+    bindPagination(allFiltered.length);
     updateSelectionControls();
   }
 
@@ -961,6 +1060,7 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     try {
       var data = await apiFetch("/codex-cards", {method: "GET", headers: {}});
       allCards = Array.isArray(data.cards) ? data.cards : [];
+      currentCardsPage = 1;
       renderStats(data.summary || {}, allCards);
       renderTable(filteredCards());
       updateStatus("codexCardListStatus", "卡密列表已刷新。", "ok");
@@ -1183,17 +1283,28 @@ const authFileCodexStatsScript = `
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = [
-      ".auth-file-codex-stats-panel{box-sizing:border-box;width:100%;min-height:76px;margin:0 0 12px;border:1px solid var(--border-color);background:color-mix(in srgb,var(--bg-secondary) 82%,transparent);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:1;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 5%,transparent)}",
-      ".auth-file-codex-stats-title{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap;margin-right:2px}",
-      ".auth-file-codex-stat{min-width:96px;border:1px solid color-mix(in srgb,var(--border-color) 86%,transparent);background:color-mix(in srgb,var(--bg-primary) 72%,transparent);border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px}",
-      ".auth-file-codex-stat-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px}",
-      ".auth-file-codex-stat-label{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap}",
-      ".auth-file-codex-stat-value{color:var(--text-primary);font-size:20px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}",
-      ".auth-file-codex-stat-breakdown{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:100%}",
-      ".auth-file-codex-stat-chip{font-size:11px;font-weight:800;line-height:1;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--bg-secondary) 80%,transparent);border:1px solid color-mix(in srgb,var(--border-color) 80%,transparent);color:var(--text-secondary);white-space:nowrap}",
-      ".auth-file-codex-stat-chip.plus{color:#ffb547;border-color:color-mix(in srgb,#ffb547 50%,var(--border-color));background:color-mix(in srgb,#ffb547 12%,transparent)}",
-      ".auth-file-codex-stat-chip.free{color:#7c93b5;border-color:color-mix(in srgb,#7c93b5 50%,var(--border-color));background:color-mix(in srgb,#7c93b5 12%,transparent)}",
-      ".auth-file-codex-stat-chip-value{font-variant-numeric:tabular-nums;font-weight:900;color:var(--text-primary)}",
+      ".auth-file-codex-stats-panel{box-sizing:border-box;width:100%;min-height:76px;margin:0 0 12px;border:1px solid var(--border-color);background:linear-gradient(135deg,color-mix(in srgb,var(--bg-secondary) 92%,transparent),color-mix(in srgb,var(--bg-secondary) 72%,transparent));border-radius:14px;padding:12px 14px;display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;position:relative;z-index:1;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 5%,transparent),0 1px 2px color-mix(in srgb,#000 8%,transparent)}",
+      ".auth-file-codex-stats-title{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap;margin-right:4px;padding-left:12px;display:flex;align-items:center;position:relative;letter-spacing:.3px}",
+      ".auth-file-codex-stats-title::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:linear-gradient(180deg,var(--primary-color),color-mix(in srgb,var(--primary-color) 30%,transparent));border-radius:2px}",
+      ".auth-file-codex-stat{flex:1 1 132px;min-width:112px;border:1px solid color-mix(in srgb,var(--border-color) 86%,transparent);background:color-mix(in srgb,var(--bg-primary) 72%,transparent);border-radius:12px;padding:0;display:flex;flex-direction:column;overflow:hidden;position:relative;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease}",
+      ".auth-file-codex-stat:hover{border-color:color-mix(in srgb,var(--border-color) 100%,transparent);transform:translateY(-1px);box-shadow:0 4px 14px color-mix(in srgb,#000 22%,transparent)}",
+      ".auth-file-codex-stat::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:.9;background:linear-gradient(90deg,color-mix(in srgb,var(--text-secondary) 60%,transparent),transparent)}",
+      ".auth-file-codex-stat.normal::after{background:linear-gradient(90deg,var(--success-color),color-mix(in srgb,var(--success-color) 20%,transparent))}",
+      ".auth-file-codex-stat.banned::after{background:linear-gradient(90deg,var(--error-color),color-mix(in srgb,var(--error-color) 20%,transparent))}",
+      ".auth-file-codex-stat.unextracted::after{background:linear-gradient(90deg,var(--success-color),color-mix(in srgb,var(--success-color) 20%,transparent))}",
+      ".auth-file-codex-stat.extracted::after{background:linear-gradient(90deg,var(--primary-color),color-mix(in srgb,var(--primary-color) 20%,transparent))}",
+      ".auth-file-codex-stat-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px 11px}",
+      ".auth-file-codex-stat-label{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap;letter-spacing:.2px}",
+      ".auth-file-codex-stat-value{color:var(--text-primary);font-size:22px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}",
+      ".auth-file-codex-stat-breakdown{display:flex;align-items:stretch;width:100%;background:color-mix(in srgb,var(--bg-secondary) 55%,transparent);border-top:1px solid color-mix(in srgb,var(--border-color) 55%,transparent)}",
+      ".auth-file-codex-stat-chip{flex:1 1 0;display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 6px;font-size:11px;font-weight:800;line-height:1;white-space:nowrap;color:var(--text-secondary);background:transparent;border:0;border-radius:0;position:relative;transition:background-color .15s ease}",
+      ".auth-file-codex-stat-chip:hover{background:color-mix(in srgb,var(--bg-secondary) 90%,transparent)}",
+      ".auth-file-codex-stat-chip+.auth-file-codex-stat-chip{border-left:1px solid color-mix(in srgb,var(--border-color) 55%,transparent)}",
+      ".auth-file-codex-stat-chip::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 0 2px color-mix(in srgb,currentColor 25%,transparent);flex-shrink:0}",
+      ".auth-file-codex-stat-chip.plus{color:#ffb547}",
+      ".auth-file-codex-stat-chip.free{color:#7c93b5}",
+      ".auth-file-codex-stat-chip-value{font-variant-numeric:tabular-nums;font-weight:900;color:var(--text-primary);font-size:12px;margin-left:2px}",
+      ".auth-file-codex-stat-chip-value[data-zero='1']{color:color-mix(in srgb,var(--text-primary) 40%,transparent)}",
       ".auth-file-codex-stat.normal .auth-file-codex-stat-value,.auth-file-codex-stat.unextracted .auth-file-codex-stat-value{color:var(--success-color)}",
       ".auth-file-codex-stat.banned .auth-file-codex-stat-value{color:var(--error-color)}",
       ".auth-file-codex-stat.extracted .auth-file-codex-stat-value{color:var(--primary-color)}",
@@ -1629,12 +1740,16 @@ const authFileCodexStatsScript = `
     ];
     function renderItem(item) {
       var bucket = item[1] || {total: 0, plus: 0, free: 0};
+      var plusValue = bucket.plus || 0;
+      var freeValue = bucket.free || 0;
+      var plusZero = Number(plusValue) === 0 ? ' data-zero="1"' : '';
+      var freeZero = Number(freeValue) === 0 ? ' data-zero="1"' : '';
       var titleAttr = item[3] ? ' title="' + escapeHTML(item[3]) + '"' : '';
       return '<div class="auth-file-codex-stat ' + item[2] + '"' + titleAttr + '>' +
         '<div class="auth-file-codex-stat-head"><span class="auth-file-codex-stat-label">' + escapeHTML(item[0]) + '</span><span class="auth-file-codex-stat-value">' + escapeHTML(bucket.total || 0) + '</span></div>' +
         '<div class="auth-file-codex-stat-breakdown">' +
-          '<span class="auth-file-codex-stat-chip plus" title="Plus">Plus <span class="auth-file-codex-stat-chip-value">' + escapeHTML(bucket.plus || 0) + '</span></span>' +
-          '<span class="auth-file-codex-stat-chip free" title="Free">Free <span class="auth-file-codex-stat-chip-value">' + escapeHTML(bucket.free || 0) + '</span></span>' +
+          '<span class="auth-file-codex-stat-chip plus" title="Plus">Plus<span class="auth-file-codex-stat-chip-value"' + plusZero + '>' + escapeHTML(plusValue) + '</span></span>' +
+          '<span class="auth-file-codex-stat-chip free" title="Free">Free<span class="auth-file-codex-stat-chip-value"' + freeZero + '>' + escapeHTML(freeValue) + '</span></span>' +
         '</div></div>';
     }
     panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计' + (loading ? ' · 更新中' : '') + '</div>' + items.map(renderItem).join("");

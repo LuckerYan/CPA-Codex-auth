@@ -305,7 +305,7 @@ func TestCodexCardManagementPanelCardListToolbarFiltersAndIconButtons(t *testing
 func TestCodexCardManagementPanelCardListShowsRedeemedAtAndBatchSearch(t *testing.T) {
 	script := []byte(codexCardManagementPanelScript)
 
-	assertContains(t, script, "<th class=\"time\">提取时间</th>")
+	assertContains(t, script, "<th class=\"time\">时间</th>")
 	assertContains(t, script, "var redeemedAt = cardRedeemedAtValue(card);")
 	assertContains(t, script, "formatDate(redeemedAt)")
 	assertContains(t, script, "function parseCardSearch(value)")
