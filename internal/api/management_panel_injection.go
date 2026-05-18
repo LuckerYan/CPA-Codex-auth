@@ -420,6 +420,13 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-checkbox:checked:after{content:"";width:8px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
 .codex-card-admin-checkbox:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-color) 20%,transparent)}
 .codex-card-admin-code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace;font-weight:800}
+.codex-card-admin-copyable{display:inline-block;cursor:pointer;padding:2px 6px;margin:-2px -6px;border-radius:6px;position:relative;transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+.codex-card-admin-copyable:hover{background:color-mix(in srgb,var(--primary-color) 14%,transparent);color:var(--primary-color)}
+.codex-card-admin-copyable:active{transform:translateY(1px)}
+.codex-card-admin-copyable.copied{background:color-mix(in srgb,var(--success-color) 22%,transparent);color:var(--success-color);box-shadow:0 0 0 1px color-mix(in srgb,var(--success-color) 55%,transparent) inset}
+.codex-card-admin-copyable.copied::after{content:"已复制";position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--success-color);color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 10px color-mix(in srgb,#000 25%,transparent);z-index:5;letter-spacing:.3px}
+.codex-card-admin-copyable.failed{background:color-mix(in srgb,var(--error-color) 18%,transparent);color:var(--error-color)}
+.codex-card-admin-copyable.failed::after{content:"复制失败";position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--error-color);color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 10px color-mix(in srgb,#000 25%,transparent);z-index:5;letter-spacing:.3px}
 .codex-card-admin-pill{border:1px solid var(--border-color);border-radius:9999px;padding:3px 9px;font-size:12px;font-weight:800;display:inline-flex}
 .codex-card-admin-pill.unused{color:var(--success-color);background:color-mix(in srgb,var(--success-color) 12%,transparent);border-color:color-mix(in srgb,var(--success-color) 35%,var(--border-color))}
 .codex-card-admin-pill.redeemed{color:var(--text-secondary);background:color-mix(in srgb,var(--text-secondary) 10%,transparent)}
@@ -1051,13 +1058,34 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     }
     wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>类型</th><th>状态</th><th class="time">时间</th><th class="file">兑换文件</th></tr></thead><tbody>' + pageCards.map(function (card) {
       var status = card.status || "";
-      var file = card.redeemed_file ? '<span class="codex-card-admin-code">' + escapeHTML(card.redeemed_file) + '</span>' : "-";
+      var file = card.redeemed_file ? '<span class="codex-card-admin-code codex-card-admin-copyable" data-copy="' + escapeHTML(card.redeemed_file) + '" title="点击复制文件名">' + escapeHTML(card.redeemed_file) + '</span>' : "-";
       var typeInfo = cardTypeLabel(card);
-      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-type-pill ' + escapeHTML(typeInfo.value) + '">' + escapeHTML(typeInfo.label) + '</span></td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td class="time">' + renderTimeCell(card) + '</td><td class="file">' + file + '</td></tr>';
+      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td><span class="codex-card-admin-code codex-card-admin-copyable" data-copy="' + escapeHTML(card.code) + '" title="点击复制卡密">' + escapeHTML(card.code) + '</span></td><td><span class="codex-card-admin-type-pill ' + escapeHTML(typeInfo.value) + '">' + escapeHTML(typeInfo.label) + '</span></td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td class="time">' + renderTimeCell(card) + '</td><td class="file">' + file + '</td></tr>';
     }).join("") + '</tbody></table>' + renderPagination(allFiltered.length);
     bindTableSelection();
     bindPagination(allFiltered.length);
+    bindCopyableCells(wrap);
     updateSelectionControls();
+  }
+
+  function bindCopyableCells(scope) {
+    if (!scope) return;
+    scope.querySelectorAll(".codex-card-admin-copyable").forEach(function (node) {
+      node.addEventListener("click", async function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var text = node.getAttribute("data-copy") || node.textContent || "";
+        var ok = false;
+        try { ok = await copyTextToClipboard(text); } catch (e) { ok = false; }
+        var cls = ok ? "copied" : "failed";
+        node.classList.remove("copied", "failed");
+        node.classList.add(cls);
+        if (node._copiedTimer) window.clearTimeout(node._copiedTimer);
+        node._copiedTimer = window.setTimeout(function () {
+          node.classList.remove(cls);
+        }, 1200);
+      });
+    });
   }
 
   function selectedCardCodes() {
