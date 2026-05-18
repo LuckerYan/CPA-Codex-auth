@@ -779,7 +779,7 @@ func TestExtractCodexAuthFilesExtractsAvailableCardsWhenAuthsAreShort(t *testing
 	if summary.Status != "partial" || summary.Success != 3 || summary.Failed != 2 || summary.Requested != 5 {
 		t.Fatalf("unexpected shortage summary: %+v", summary)
 	}
-	if !codexExtractSummaryHasFailure(summary, "可用认证文件不足", "CARD-4") || !codexExtractSummaryHasFailure(summary, "可用认证文件不足", "CARD-5") {
+	if !codexExtractSummaryHasFailure(summary, "对应类型(Free)认证文件不足", "CARD-4") || !codexExtractSummaryHasFailure(summary, "对应类型(Free)认证文件不足", "CARD-5") {
 		t.Fatalf("missing shortage failure group: %+v", summary)
 	}
 	if downloadResp.DownloadFileName == "" || downloadResp.DownloadBase64 == "" || !strings.Contains(downloadResp.ContentType, "application/zip") {

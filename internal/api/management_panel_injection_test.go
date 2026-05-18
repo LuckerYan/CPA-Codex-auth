@@ -119,11 +119,15 @@ func TestPatchAuthFilesDisplayOptionsDropdown(t *testing.T) {
 	assertContains(t, patched, "auth-files-display-options-menu")
 	assertContains(t, patched, "auth-files-display-options-trigger")
 	assertContains(t, patched, "auth-files-display-options-list")
-	assertContains(t, patched, "children:(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(p?1:0)")
+	assertContains(t, patched, "(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(plusOnly?1:0)+(freeOnly?1:0)+(p?1:0)")
 	assertContains(t, patched, "仅显示未提取凭证")
 	assertContains(t, patched, "仅显示已提取凭证")
+	assertContains(t, patched, "仅显示 Plus 凭证")
+	assertContains(t, patched, "仅显示 Free 凭证")
 	assertContains(t, patched, "e&&setExtractedOnly(!1)")
 	assertContains(t, patched, "e&&setUnextractedOnly(!1)")
+	assertContains(t, patched, "e&&setPlusOnly(!1)")
+	assertContains(t, patched, "e&&setFreeOnly(!1)")
 	assertNotContains(t, patched, "className:G.filterToggleGroup,children:[")
 }
 
@@ -161,6 +165,33 @@ func TestPatchAuthFilesSearchSupportsCodexCardBatchMarker(t *testing.T) {
 	assertContains(t, patched, "[t.name,t.id,t.path,t.email,t.account]")
 	assertContains(t, patched, "n===e||n.includes(e)")
 	assertNotContains(t, patched, "[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r")
+}
+
+// TestPatchAuthFilesFilterFallbackHandlesRenamedTypeAccumulator verifies that
+// when the upstream bundle changes the forEach body to populate the type Set
+// via a helper (e.g. `let n=Vv(String(t.type??t.provider??``));n&&e.add(n)`),
+// the fallback rewriter still injects the Codex-specific filter helpers and
+// extends the ct filter useMemo with plus/free/extracted/unextracted/cardBatch
+// branches, preserving the dynamic problem-detector identifier.
+func TestPatchAuthFilesFilterFallbackHandlesRenamedTypeAccumulator(t *testing.T) {
+	input := []byte(
+		"Uv=e=>Hv(e).length>0," +
+			"let st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{let n=Vv(String(t.type??t.provider??``));n&&e.add(n)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Uv(e)||d&&e.disabled!==!0)),[d,I,l]),lt=",
+	)
+
+	patched := patchQuotaManagementPanel(input)
+
+	assertContains(t, patched, "codexExtractedFilterMatch")
+	assertContains(t, patched, "codexUnextractedFilterMatch")
+	assertContains(t, patched, "codexPlusFilterMatch")
+	assertContains(t, patched, "codexFreeFilterMatch")
+	assertContains(t, patched, "codexPlanTypeOf")
+	assertContains(t, patched, "cardBatchActiveForFilters")
+	assertContains(t, patched, "plusOnly&&!codexPlusFilterMatch(e)")
+	assertContains(t, patched, "freeOnly&&!codexFreeFilterMatch(e)")
+	// Preserve the dynamically renamed problem-detector identifier (Uv here).
+	assertContains(t, patched, "!Uv(e)")
+	assertContains(t, patched, "[d,I,l,extractedOnly,unextractedOnly,plusOnly,freeOnly,cardBatchActiveForFilters]")
 }
 
 func TestPatchAuthFilesSearchLabelShowsMatchCountBadge(t *testing.T) {
@@ -320,12 +351,12 @@ func TestAuthFileCodexStatsCountsUnextractedOnlyForNormalFiles(t *testing.T) {
 	script := []byte(authFileCodexStatsScript)
 
 	assertContains(t, script, "var banned = isBannedFile(file);")
-	assertContains(t, script, "if (banned) {")
-	assertContains(t, script, "stats.banned += 1;")
-	assertContains(t, script, "} else {\n        stats.normal += 1;")
-	assertContains(t, script, "if (isExtractedFile(file)) stats.extracted += 1;")
-	assertContains(t, script, "else if (!banned) stats.unextracted += 1;")
-	assertNotContains(t, script, "stats.banned += 1;\n        return;")
+	assertContains(t, script, "if (banned) bump(\"banned\", type);")
+	assertContains(t, script, "else bump(\"normal\", type);")
+	assertContains(t, script, "if (isExtractedFile(file)) bump(\"extracted\", type);")
+	assertContains(t, script, "else if (!banned) bump(\"unextracted\", type);")
+	assertContains(t, script, "function codexFileEffectiveType(file)")
+	assertContains(t, script, "function codexFilePlanType(file)")
 	assertContains(t, script, "未提取=状态正常且尚未分配给用户")
 	assertContains(t, script, "已提取=已分配给用户")
 }

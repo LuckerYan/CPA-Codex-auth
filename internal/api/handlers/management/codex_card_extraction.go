@@ -41,6 +41,8 @@ const (
 	codexQuotaUsageURL             = "https://chatgpt.com/backend-api/wham/usage"
 	codexQuotaUserAgent            = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal"
 	codexExtractSummaryHeader      = "X-Codex-Extract-Summary"
+	codexCardTypePlus              = "plus"
+	codexCardTypeFree              = "free"
 )
 
 var codexCardStores sync.Map
@@ -55,6 +57,7 @@ type codexCardRecord struct {
 	Code             string     `json:"code"`
 	Source           string     `json:"source"`
 	Status           string     `json:"status"`
+	CardType         string     `json:"card_type,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	RedeemedAt       *time.Time `json:"redeemed_at,omitempty"`
@@ -68,6 +71,7 @@ type codexAuthCandidate struct {
 	ID              string
 	FilePath        string
 	FileName        string
+	PlanType        string
 	ReservationKeys []string
 }
 
@@ -81,7 +85,8 @@ type codexSelectedAuth struct {
 }
 
 type codexCardGenerateRequest struct {
-	Count int `json:"count"`
+	Count int    `json:"count"`
+	Type  string `json:"type"`
 }
 
 type codexCardImportRequest struct {
@@ -408,13 +413,14 @@ func (s *codexCardStore) list() ([]*codexCardRecord, error) {
 	return out, nil
 }
 
-func (s *codexCardStore) generate(count int) ([]*codexCardRecord, error) {
+func (s *codexCardStore) generate(count int, cardType string) ([]*codexCardRecord, error) {
 	if s == nil {
 		return nil, fmt.Errorf("card store is nil")
 	}
 	if count <= 0 {
 		return nil, fmt.Errorf("count must be greater than zero")
 	}
+	normalizedType := normalizeCodexCardType(cardType)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ensureLoadedLocked(); err != nil {
@@ -440,6 +446,7 @@ func (s *codexCardStore) generate(count int) ([]*codexCardRecord, error) {
 			Code:      code,
 			Source:    "generated",
 			Status:    codexCardStatusUnused,
+			CardType:  normalizedType,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
@@ -603,6 +610,28 @@ func (s *codexCardStore) availableCodes(codes []string) ([]string, []codexExtrac
 		}
 	}
 	return available, failures, nil
+}
+
+// cardTypeFor returns the effective card type ("plus"/"free") for a single code.
+// Unknown codes default to free (matching legacy behavior).
+func (s *codexCardStore) cardTypeFor(code string) string {
+	if s == nil {
+		return codexCardTypeFree
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return codexCardTypeFree
+	}
+	normalized := normalizeCodexCardCode(code)
+	if normalized == "" {
+		return codexCardTypeFree
+	}
+	record, ok := s.cards[normalized]
+	if !ok || record == nil {
+		return codexCardTypeFree
+	}
+	return codexCardEffectiveType(record.CardType)
 }
 
 func (s *codexCardStore) redeemedAuthKeys() (map[string]struct{}, error) {
@@ -1250,7 +1279,7 @@ func (h *Handler) GenerateCodexCards(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	cards, err := store.generate(req.Count)
+	cards, err := store.generate(req.Count, req.Type)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1560,16 +1589,61 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		})
 		return
 	}
-	selected, errSelect := h.selectCodexAuthCandidates(c.Request.Context(), candidates, len(availableCodes), concurrency)
-	if errSelect != nil {
-		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes...)
-		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
-		c.JSON(http.StatusConflict, gin.H{
-			"error":   codexExtractErrorMessage(summary) + "：" + errSelect.Error(),
-			"summary": summary,
-		})
-		return
+	// Group available codes by their card type so we can match Plus cards to Plus
+	// auth files and Free cards to Free auth files independently.
+	codesByType := map[string][]string{codexCardTypePlus: nil, codexCardTypeFree: nil}
+	for _, code := range availableCodes {
+		t := store.cardTypeFor(code)
+		codesByType[t] = append(codesByType[t], code)
 	}
+	candidatesByType := map[string][]codexAuthCandidate{codexCardTypePlus: nil, codexCardTypeFree: nil}
+	for _, candidate := range candidates {
+		t := candidate.PlanType
+		if t == "" {
+			t = codexCardTypeFree
+		}
+		candidatesByType[t] = append(candidatesByType[t], candidate)
+	}
+	orderedCodes := make([]string, 0, len(availableCodes))
+	orderedSelected := make([]codexAuthCandidate, 0, len(availableCodes))
+	for _, t := range []string{codexCardTypePlus, codexCardTypeFree} {
+		typedCodes := codesByType[t]
+		if len(typedCodes) == 0 {
+			continue
+		}
+		typedCandidates := candidatesByType[t]
+		if len(typedCandidates) == 0 {
+			label := "Plus"
+			if t == codexCardTypeFree {
+				label = "Free"
+			}
+			addCodexExtractFailure(&failureGroups, "对应类型("+label+")认证文件不足", typedCodes...)
+			continue
+		}
+		selectedTyped, errSelectTyped := h.selectCodexAuthCandidates(c.Request.Context(), typedCandidates, len(typedCodes), concurrency)
+		if errSelectTyped != nil {
+			label := "Plus"
+			if t == codexCardTypeFree {
+				label = "Free"
+			}
+			addCodexExtractFailure(&failureGroups, "对应类型("+label+")认证文件不足", typedCodes...)
+			continue
+		}
+		take := len(selectedTyped)
+		if take > len(typedCodes) {
+			take = len(typedCodes)
+		}
+		orderedCodes = append(orderedCodes, typedCodes[:take]...)
+		orderedSelected = append(orderedSelected, selectedTyped[:take]...)
+		if take < len(typedCodes) {
+			label := "Plus"
+			if t == codexCardTypeFree {
+				label = "Free"
+			}
+			addCodexExtractFailure(&failureGroups, "对应类型("+label+")认证文件不足", typedCodes[take:]...)
+		}
+	}
+	selected := orderedSelected
 	if len(selected) == 0 {
 		summary := newCodexExtractSummary(format, len(rawCardCodes), 0, failureGroups)
 		c.JSON(http.StatusConflict, gin.H{
@@ -1577,9 +1651,6 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 			"summary": summary,
 		})
 		return
-	}
-	if len(selected) < len(availableCodes) {
-		addCodexExtractFailure(&failureGroups, "可用认证文件不足", availableCodes[len(selected):]...)
 	}
 	files, errLoad := h.loadCodexAuthFiles(selected, concurrency)
 	if errLoad != nil {
@@ -1609,7 +1680,7 @@ func (h *Handler) ExtractCodexAuthFiles(c *gin.Context) {
 		}
 		writeOutput = writeCodexAuthZip
 	}
-	successCodes := availableCodes[:len(files)]
+	successCodes := orderedCodes[:len(files)]
 	if errRedeem := store.redeem(successCodes, files); errRedeem != nil {
 		status := http.StatusConflict
 		if strings.Contains(strings.ToLower(errRedeem.Error()), "not found") {
@@ -1675,6 +1746,7 @@ func (h *Handler) collectCodexAuthCandidates(ctx context.Context, redeemedAuths 
 			ID:              auth.ID,
 			FilePath:        cleaned,
 			FileName:        filepath.Base(cleaned),
+			PlanType:        codexAuthEffectiveTypeFromAuth(auth),
 			ReservationKeys: codexAuthReservationKeys(auth.ID, filepath.Base(cleaned), cleaned, auth.Metadata),
 		}
 		if codexAuthAlreadyRedeemed(redeemedAuths, candidate) {
@@ -2869,4 +2941,83 @@ func generateCodexCardCode() (string, error) {
 		return "", fmt.Errorf("generate card code: %w", err)
 	}
 	return "CDX-" + strings.ToUpper(hex.EncodeToString(raw)), nil
+}
+
+// normalizeCodexCardType normalizes a raw card type to either "plus" or "free".
+// Any unrecognized value falls back to "free" so legacy unflagged cards keep working.
+func normalizeCodexCardType(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "plus", "codex_plus", "codex-plus":
+		return codexCardTypePlus
+	case "free", "codex_free", "codex-free":
+		return codexCardTypeFree
+	case "":
+		return ""
+	default:
+		return codexCardTypeFree
+	}
+}
+
+// codexCardEffectiveType returns the type used for matching ("plus" or "free").
+// An empty stored type is treated as free for backward compatibility.
+func codexCardEffectiveType(raw string) string {
+	value := normalizeCodexCardType(raw)
+	if value == "" {
+		return codexCardTypeFree
+	}
+	return value
+}
+
+// codexAuthPlanType extracts the plan type ("plus"/"free"/...) from the auth file metadata.
+// Looks for the value in metadata first, then in nested token claims.
+func codexAuthPlanType(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	if v := strings.TrimSpace(codexAuthMetadataValue(metadata, "plan_type")); v != "" {
+		return strings.ToLower(v)
+	}
+	if v := strings.TrimSpace(codexAuthMetadataValue(metadata, "chatgpt_plan_type")); v != "" {
+		return strings.ToLower(v)
+	}
+	idToken := strings.TrimSpace(codexAuthMetadataValue(metadata, "id_token"))
+	if idToken != "" {
+		if claims, err := codexjwt.ParseJWTToken(idToken); err == nil && claims != nil {
+			if v := strings.TrimSpace(claims.CodexAuthInfo.ChatgptPlanType); v != "" {
+				return strings.ToLower(v)
+			}
+		}
+	}
+	return ""
+}
+
+// codexAuthEffectiveType returns "plus" when the plan_type is "plus"/"pro"/"team"/...,
+// otherwise "free" (also when plan_type is empty).
+func codexAuthEffectiveType(planType string) string {
+	value := strings.ToLower(strings.TrimSpace(planType))
+	if value == "" || value == codexCardTypeFree {
+		return codexCardTypeFree
+	}
+	return codexCardTypePlus
+}
+
+// codexAuthEffectiveTypeFromAuth returns the effective type for an *coreauth.Auth.
+func codexAuthEffectiveTypeFromAuth(auth *coreauth.Auth) string {
+	if auth == nil {
+		return codexCardTypeFree
+	}
+	return codexAuthEffectiveType(codexAuthPlanType(auth.Metadata))
+}
+
+// codexAuthEffectiveTypeFromData returns the effective type from raw auth file bytes.
+func codexAuthEffectiveTypeFromData(data []byte) string {
+	if len(data) == 0 {
+		return codexCardTypeFree
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return codexCardTypeFree
+	}
+	return codexAuthEffectiveType(codexAuthPlanType(metadata))
 }

@@ -115,19 +115,19 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "[s,c]=(0,y.useState)(`all`),[l,u]=(0,y.useState)(!1),[d,f]=(0,y.useState)(!1),[p,m]=(0,y.useState)(!1),[h,g]=(0,y.useState)(``),",
-			new: "[s,c]=(0,y.useState)(`all`),[l,u]=(0,y.useState)(!1),[d,f]=(0,y.useState)(!1),[extractedOnly,setExtractedOnly]=(0,y.useState)(!1),[unextractedOnly,setUnextractedOnly]=(0,y.useState)(!1),[p,m]=(0,y.useState)(!1),[h,g]=(0,y.useState)(``),",
+			new: "[s,c]=(0,y.useState)(`all`),[l,u]=(0,y.useState)(!1),[d,f]=(0,y.useState)(!1),[extractedOnly,setExtractedOnly]=(0,y.useState)(!1),[unextractedOnly,setUnextractedOnly]=(0,y.useState)(!1),[plusOnly,setPlusOnly]=(0,y.useState)(!1),[freeOnly,setFreeOnly]=(0,y.useState)(!1),[p,m]=(0,y.useState)(!1),[h,g]=(0,y.useState)(``),",
 		},
 		{
 			old: "typeof t.problemOnly==`boolean`&&u(t.problemOnly),typeof t.disabledOnly==`boolean`&&f(t.disabledOnly),typeof e!=`boolean`&&typeof t.compactMode==`boolean`&&m(t.compactMode),",
-			new: "typeof t.problemOnly==`boolean`&&u(t.problemOnly),typeof t.disabledOnly==`boolean`&&f(t.disabledOnly),typeof t.extractedOnly==`boolean`&&setExtractedOnly(t.extractedOnly),typeof t.unextractedOnly==`boolean`&&setUnextractedOnly(t.unextractedOnly),typeof e!=`boolean`&&typeof t.compactMode==`boolean`&&m(t.compactMode),",
+			new: "typeof t.problemOnly==`boolean`&&u(t.problemOnly),typeof t.disabledOnly==`boolean`&&f(t.disabledOnly),typeof t.extractedOnly==`boolean`&&setExtractedOnly(t.extractedOnly),typeof t.unextractedOnly==`boolean`&&setUnextractedOnly(t.unextractedOnly),typeof t.plusOnly==`boolean`&&setPlusOnly(t.plusOnly),typeof t.freeOnly==`boolean`&&setFreeOnly(t.freeOnly),typeof e!=`boolean`&&typeof t.compactMode==`boolean`&&m(t.compactMode),",
 		},
 		{
 			old: "zx({filter:s,problemOnly:l,disabledOnly:d,compactMode:p,search:h,page:_,pageSize:tt,regularPageSize:b.regular,compactPageSize:b.compact,sortMode:D}),Vx(p))},[p,d,s,_,tt,b,l,h,D,j])",
-			new: "zx({filter:s,problemOnly:l,disabledOnly:d,extractedOnly:extractedOnly,unextractedOnly:unextractedOnly,compactMode:p,search:h,page:_,pageSize:tt,regularPageSize:b.regular,compactPageSize:b.compact,sortMode:D}),Vx(p))},[p,d,s,_,tt,b,l,h,D,j,extractedOnly,unextractedOnly])",
+			new: "zx({filter:s,problemOnly:l,disabledOnly:d,extractedOnly:extractedOnly,unextractedOnly:unextractedOnly,plusOnly:plusOnly,freeOnly:freeOnly,compactMode:p,search:h,page:_,pageSize:tt,regularPageSize:b.regular,compactPageSize:b.compact,sortMode:D}),Vx(p))},[p,d,s,_,tt,b,l,h,D,j,extractedOnly,unextractedOnly,plusOnly,freeOnly])",
 		},
 		{
 			old: "let st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!Vv(e)||d&&e.disabled!==!0)),[d,I,l]),lt=",
-			new: "let codexExtractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!!(e?.codex_redeemed||e?.codex_extracted||e?.redeemed),codexUnextractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!codexExtractedFilterMatch(e)&&String(e?.account_status??e?.accountStatus??e?.status??``).trim().toLowerCase()!==`banned`,cardBatchActiveForFilters=String(h||``).trim().startsWith(`__codex_card_batch__=`),st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>cardBatchActiveForFilters||!(l&&!Vv(e)||d&&e.disabled!==!0||extractedOnly&&!codexExtractedFilterMatch(e)||unextractedOnly&&!codexUnextractedFilterMatch(e))),[d,I,l,extractedOnly,unextractedOnly,cardBatchActiveForFilters]),lt=",
+			new: "let codexExtractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!!(e?.codex_redeemed||e?.codex_extracted||e?.redeemed),codexUnextractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!codexExtractedFilterMatch(e)&&String(e?.account_status??e?.accountStatus??e?.status??``).trim().toLowerCase()!==`banned`,codexPlanTypeOf=e=>{if(!e)return ``;let t=e.id_token||e.idToken,n=``;if(t&&typeof t===`object`)n=t.plan_type||t.planType||t.chatgpt_plan_type||``;if(!n)n=e.plan_type||e.planType||e.chatgpt_plan_type||``;return String(n||``).trim().toLowerCase()},codexEffectiveTypeOf=e=>{let t=codexPlanTypeOf(e);return!t||t===`free`?`free`:`plus`},codexPlusFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&codexEffectiveTypeOf(e)===`plus`,codexFreeFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&codexEffectiveTypeOf(e)===`free`,cardBatchActiveForFilters=String(h||``).trim().startsWith(`__codex_card_batch__=`),st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach(t=>{t.type&&e.add(t.type)}),Array.from(e)},[I]),ct=(0,y.useMemo)(()=>I.filter(e=>cardBatchActiveForFilters||!(l&&!Vv(e)||d&&e.disabled!==!0||extractedOnly&&!codexExtractedFilterMatch(e)||unextractedOnly&&!codexUnextractedFilterMatch(e)||plusOnly&&!codexPlusFilterMatch(e)||freeOnly&&!codexFreeFilterMatch(e))),[d,I,l,extractedOnly,unextractedOnly,plusOnly,freeOnly,cardBatchActiveForFilters]),lt=",
 		},
 		{
 			old: "dt=h.trim(),ft=(0,y.useMemo)(()=>Yx(dt),[dt]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r})},[ct,s,dt,ft]),mt=",
@@ -155,7 +155,7 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`div`,{className:G.filterToggleGroup,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})",
-			new: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`details`,{className:`auth-files-display-options-menu`,children:[(0,B.jsxs)(`summary`,{className:`auth-files-display-options-trigger`,children:[(0,B.jsx)(`span`,{children:e(`auth_files.display_options_label`)}),(l||d||extractedOnly||unextractedOnly||p)&&(0,B.jsx)(`span`,{className:`auth-files-display-options-count`,children:(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(p?1:0)}),(0,B.jsx)(`span`,{className:`auth-files-display-options-chevron`,children:`⌄`})]}),(0,B.jsxs)(`div`,{className:`${G.filterToggleGroup} auth-files-display-options-list`,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:unextractedOnly,onChange:e=>{setUnextractedOnly(e),e&&setExtractedOnly(!1),v(1)},ariaLabel:`仅显示未提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示未提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:extractedOnly,onChange:e=>{setExtractedOnly(e),e&&setUnextractedOnly(!1),v(1)},ariaLabel:`仅显示已提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示已提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})]})",
+			new: "(0,B.jsxs)(`div`,{className:`${G.filterItem} ${G.filterToggleItem}`,children:[(0,B.jsx)(`label`,{children:e(`auth_files.display_options_label`)}),(0,B.jsxs)(`details`,{className:`auth-files-display-options-menu`,children:[(0,B.jsxs)(`summary`,{className:`auth-files-display-options-trigger`,children:[(0,B.jsx)(`span`,{children:e(`auth_files.display_options_label`)}),(l||d||extractedOnly||unextractedOnly||plusOnly||freeOnly||p)&&(0,B.jsx)(`span`,{className:`auth-files-display-options-count`,children:(l?1:0)+(d?1:0)+(extractedOnly?1:0)+(unextractedOnly?1:0)+(plusOnly?1:0)+(freeOnly?1:0)+(p?1:0)}),(0,B.jsx)(`span`,{className:`auth-files-display-options-chevron`,children:`⌄`})]}),(0,B.jsxs)(`div`,{className:`${G.filterToggleGroup} auth-files-display-options-list`,children:[(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:l,onChange:e=>{u(e),v(1)},ariaLabel:e(`auth_files.problem_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.problem_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:d,onChange:e=>{f(e),v(1)},ariaLabel:e(`auth_files.disabled_filter_only`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.disabled_filter_only`)})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:unextractedOnly,onChange:e=>{setUnextractedOnly(e),e&&setExtractedOnly(!1),v(1)},ariaLabel:`仅显示未提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示未提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:extractedOnly,onChange:e=>{setExtractedOnly(e),e&&setUnextractedOnly(!1),v(1)},ariaLabel:`仅显示已提取凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示已提取凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:plusOnly,onChange:e=>{setPlusOnly(e),e&&setFreeOnly(!1),v(1)},ariaLabel:`仅显示 Plus 凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示 Plus 凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:freeOnly,onChange:e=>{setFreeOnly(e),e&&setPlusOnly(!1),v(1)},ariaLabel:`仅显示 Free 凭证`,label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:`仅显示 Free 凭证`})})}),(0,B.jsx)(`div`,{className:G.filterToggleCard,children:(0,B.jsx)(Sg,{checked:p,onChange:e=>m(e),ariaLabel:e(`auth_files.compact_mode_label`),label:(0,B.jsx)(`span`,{className:G.filterToggleLabel,children:e(`auth_files.compact_mode_label`)})})})]})]})]})",
 		},
 		{
 			old: "let{t:e}=qo(),{showNotification:t,showConfirmation:n}=hc(),[r,i]=(0,y.useState)([]),",
@@ -210,7 +210,51 @@ func patchQuotaManagementPanel(data []byte) []byte {
 	for _, replacement := range replacements {
 		patched = bytes.Replace(patched, []byte(replacement.old), []byte(replacement.new), 1)
 	}
+	patched = patchAuthFilesFilterFallback(patched)
 	return patched
+}
+
+// patchAuthFilesFilterFallback handles the case where the upstream React bundle
+// changed how the type Set is populated (e.g. from `t.type&&e.add(t.type)` to
+// `let n=Vv(String(t.type??t.provider??``));n&&e.add(n)`), which makes the
+// literal patch above miss. It detects the unmodified ct filter useMemo and
+// rewrites it (and injects the Codex-specific helper variables) idempotently.
+func patchAuthFilesFilterFallback(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	// Skip when the literal patch already injected the helpers.
+	if bytes.Contains(data, []byte("codexPlusFilterMatch")) {
+		return data
+	}
+	// Match the unmodified ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!XX(e)||d&&e.disabled!==!0)),[d,I,l])
+	// pattern, capturing the problem-detector identifier (Vv / Uv / etc.).
+	ctRE := regexp.MustCompile(`ct=\(0,y\.useMemo\)\(\(\)=>I\.filter\(e=>!\(l&&!(\w+)\(e\)\|\|d&&e\.disabled!==!0\)\),\[d,I,l\]\)`)
+	loc := ctRE.FindSubmatchIndex(data)
+	if loc == nil {
+		return data
+	}
+	vvName := string(data[loc[2]:loc[3]])
+	// Build replacement with the dynamic identifier preserved.
+	newCt := []byte("ct=(0,y.useMemo)(()=>I.filter(e=>cardBatchActiveForFilters||!(l&&!" + vvName + "(e)||d&&e.disabled!==!0||extractedOnly&&!codexExtractedFilterMatch(e)||unextractedOnly&&!codexUnextractedFilterMatch(e)||plusOnly&&!codexPlusFilterMatch(e)||freeOnly&&!codexFreeFilterMatch(e))),[d,I,l,extractedOnly,unextractedOnly,plusOnly,freeOnly,cardBatchActiveForFilters])")
+	rewritten := make([]byte, 0, len(data)+len(newCt))
+	rewritten = append(rewritten, data[:loc[0]]...)
+	rewritten = append(rewritten, newCt...)
+	rewritten = append(rewritten, data[loc[1]:]...)
+	// Inject the helper declarations immediately before `st=(0,y.useMemo)(`. We
+	// can't anchor on `let st=` because the surrounding code may use the new
+	// `Vv(String(t.type??...))` form which still starts the chain with `let st=`.
+	target := []byte("st=(0,y.useMemo)(()=>{let e=new Set([`all`]);return I.forEach")
+	idx := bytes.Index(rewritten, target)
+	if idx < 0 {
+		return rewritten
+	}
+	helpers := []byte("codexExtractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!!(e?.codex_redeemed||e?.codex_extracted||e?.redeemed),codexUnextractedFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&!codexExtractedFilterMatch(e)&&String(e?.account_status??e?.accountStatus??e?.status??``).trim().toLowerCase()!==`banned`,codexPlanTypeOf=e=>{if(!e)return ``;let t=e.id_token||e.idToken,n=``;if(t&&typeof t===`object`)n=t.plan_type||t.planType||t.chatgpt_plan_type||``;if(!n)n=e.plan_type||e.planType||e.chatgpt_plan_type||``;return String(n||``).trim().toLowerCase()},codexEffectiveTypeOf=e=>{let t=codexPlanTypeOf(e);return!t||t===`free`?`free`:`plus`},codexPlusFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&codexEffectiveTypeOf(e)===`plus`,codexFreeFilterMatch=e=>String(e?.type??e?.provider??``).trim().toLowerCase()===`codex`&&codexEffectiveTypeOf(e)===`free`,cardBatchActiveForFilters=String(h||``).trim().startsWith(`__codex_card_batch__=`),")
+	out := make([]byte, 0, len(rewritten)+len(helpers))
+	out = append(out, rewritten[:idx]...)
+	out = append(out, helpers...)
+	out = append(out, rewritten[idx:]...)
+	return out
 }
 
 // renameQuotaPanelIdent rewrites only the identifier-shaped occurrences of old in s.
@@ -284,6 +328,12 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-input:focus,.codex-card-admin-textarea:focus{border-color:var(--primary-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-color) 18%,transparent)}
 .codex-card-admin-row{align-items:center;gap:12px;display:flex}
 .codex-card-admin-row>*{flex:1}
+.codex-card-admin-generate-fields{align-items:flex-end;gap:12px;display:flex}
+.codex-card-admin-generate-field{min-width:0;flex:1 1 0;display:flex;flex-direction:column;gap:0}
+.codex-card-admin-generate-field .codex-card-admin-label{margin-top:0}
+.codex-card-admin-generate-actions{margin-top:14px;display:flex}
+.codex-card-admin-generate-actions .codex-card-admin-button{width:100%}
+.codex-card-admin-generate-type{height:42px;padding-right:36px;appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22M3 4.75 6 7.75 9 4.75%22 stroke=%22%238b8680%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E');background-position:right 12px center;background-repeat:no-repeat;background-size:12px 12px}
 .codex-card-admin-actions{flex-wrap:wrap;gap:10px;margin-top:14px;display:flex}
 .codex-card-admin-button{border:1px solid color-mix(in srgb,var(--primary-color) 60%,var(--border-color));background:var(--primary-color);color:#fff;cursor:pointer;border-radius:10px;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px 14px;font:inherit;font-weight:700;transition:transform .15s,box-shadow .15s,opacity .15s;display:inline-flex}
 .codex-card-admin-button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 12px 22px color-mix(in srgb,var(--primary-color) 24%,transparent)}
@@ -316,6 +366,9 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
 .codex-card-admin-pill{border:1px solid var(--border-color);border-radius:9999px;padding:3px 9px;font-size:12px;font-weight:800;display:inline-flex}
 .codex-card-admin-pill.unused{color:var(--success-color);background:color-mix(in srgb,var(--success-color) 12%,transparent);border-color:color-mix(in srgb,var(--success-color) 35%,var(--border-color))}
 .codex-card-admin-pill.redeemed{color:var(--text-secondary);background:color-mix(in srgb,var(--text-secondary) 10%,transparent)}
+.codex-card-admin-type-pill{border-radius:9999px;padding:3px 9px;font-size:12px;font-weight:800;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--border-color);background:color-mix(in srgb,var(--bg-secondary) 70%,transparent);color:var(--text-secondary);letter-spacing:.02em;white-space:nowrap}
+.codex-card-admin-type-pill.plus{color:#d97f00;background:color-mix(in srgb,#ffb547 14%,transparent);border-color:color-mix(in srgb,#ffb547 50%,var(--border-color))}
+.codex-card-admin-type-pill.free{color:#5d728f;background:color-mix(in srgb,#7c93b5 12%,transparent);border-color:color-mix(in srgb,#7c93b5 50%,var(--border-color))}
 .codex-card-admin-empty{color:var(--text-secondary);padding:26px;text-align:center}
 .codex-card-admin-link{color:var(--text-primary);text-decoration:none;border-bottom:1px solid var(--border-color)}
 .codex-card-admin-bulkbar{border:1px solid var(--border-color);background:var(--bg-secondary);border-radius:14px;align-items:center;justify-content:flex-start;gap:12px;margin:14px 0 14px;padding:14px;display:flex;flex-wrap:wrap}
@@ -553,9 +606,20 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
   <div class="codex-card-admin-grid">
     <section class="codex-card-admin-card">
       <h2>系统生成卡密</h2>
-      <label class="codex-card-admin-label" for="codexCardGenerateCount">生成数量</label>
-      <div class="codex-card-admin-row">
-        <input class="codex-card-admin-input" id="codexCardGenerateCount" type="number" min="1" step="1" value="1">
+      <div class="codex-card-admin-row codex-card-admin-generate-fields">
+        <div class="codex-card-admin-generate-field">
+          <label class="codex-card-admin-label" for="codexCardGenerateCount">生成数量</label>
+          <input class="codex-card-admin-input" id="codexCardGenerateCount" type="number" min="1" step="1" value="1">
+        </div>
+        <div class="codex-card-admin-generate-field">
+          <label class="codex-card-admin-label" for="codexCardGenerateType">卡密生成类型</label>
+          <select class="codex-card-admin-input codex-card-admin-generate-type" id="codexCardGenerateType">
+            <option value="plus">Codex Plus</option>
+            <option value="free" selected>Codex Free</option>
+          </select>
+        </div>
+      </div>
+      <div class="codex-card-admin-generate-actions">
         <button class="codex-card-admin-button" id="codexCardGenerateButton">生成卡密</button>
       </div>
       <div class="codex-card-admin-status" id="codexCardGenerateStatus"></div>
@@ -812,6 +876,13 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
     renderTable(filteredCards());
   }
 
+  function cardTypeLabel(card) {
+    if (!card) return { value: "free", label: "Free" };
+    var raw = String(card.card_type || card.cardType || "").trim().toLowerCase();
+    if (raw === "plus") return { value: "plus", label: "Plus" };
+    return { value: "free", label: "Free" };
+  }
+
   function renderTable(cards) {
     var wrap = document.getElementById("codexCardTableWrap");
     if (!wrap) return;
@@ -831,11 +902,12 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
       updateSelectionControls();
       return;
     }
-    wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>状态</th><th>来源</th><th class="time">创建时间</th><th class="time">提取时间</th><th class="file">兑换文件</th></tr></thead><tbody>' + cards.map(function (card) {
+    wrap.innerHTML = '<table class="codex-card-admin-table"><thead><tr><th class="select"><input class="codex-card-admin-checkbox" id="codexCardSelectAllTable" type="checkbox" aria-label="全选卡密"></th><th>卡密</th><th>类型</th><th>状态</th><th>来源</th><th class="time">创建时间</th><th class="time">提取时间</th><th class="file">兑换文件</th></tr></thead><tbody>' + cards.map(function (card) {
       var status = card.status || "";
       var file = card.redeemed_file ? '<span class="codex-card-admin-code">' + escapeHTML(card.redeemed_file) + '</span>' : "-";
       var redeemedAt = cardRedeemedAtValue(card);
-      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td>' + escapeHTML(card.source || "-") + '</td><td class="time">' + escapeHTML(formatDate(card.created_at)) + '</td><td class="time">' + escapeHTML(formatDate(redeemedAt)) + '</td><td class="file">' + file + '</td></tr>';
+      var typeInfo = cardTypeLabel(card);
+      return '<tr><td class="select"><input class="codex-card-admin-checkbox codex-card-row-checkbox" type="checkbox" value="' + escapeHTML(card.code) + '" aria-label="选择卡密 ' + escapeHTML(card.code) + '"></td><td class="codex-card-admin-code">' + escapeHTML(card.code) + '</td><td><span class="codex-card-admin-type-pill ' + escapeHTML(typeInfo.value) + '">' + escapeHTML(typeInfo.label) + '</span></td><td><span class="codex-card-admin-pill ' + escapeHTML(status) + '">' + escapeHTML(status) + '</span></td><td>' + escapeHTML(card.source || "-") + '</td><td class="time">' + escapeHTML(formatDate(card.created_at)) + '</td><td class="time">' + escapeHTML(formatDate(redeemedAt)) + '</td><td class="file">' + file + '</td></tr>';
     }).join("") + '</tbody></table>';
     bindTableSelection();
     updateSelectionControls();
@@ -932,19 +1004,23 @@ body.codex-card-admin-active .main-content > :not(.codex-card-admin-page){displa
         updateStatus("codexCardGenerateStatus", "正在生成卡密...", "");
         try {
           var count = Number(document.getElementById("codexCardGenerateCount").value || "1");
-          var data = await apiFetch("/codex-cards/generate", {method: "POST", body: JSON.stringify({count: count})});
+          var typeSelect = document.getElementById("codexCardGenerateType");
+          var cardType = typeSelect ? String(typeSelect.value || "free").trim().toLowerCase() : "free";
+          if (cardType !== "plus" && cardType !== "free") cardType = "free";
+          var data = await apiFetch("/codex-cards/generate", {method: "POST", body: JSON.stringify({count: count, type: cardType})});
           var codes = data.codes || [];
           var outputText = codes.join("\n") || JSON.stringify(data, null, 2);
           document.getElementById("codexCardGenerateOutput").textContent = outputText;
+          var typeLabel = cardType === "plus" ? "Codex Plus" : "Codex Free";
           if (outputText) {
             try {
               var copied = await copyTextToClipboard(outputText);
-              updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密" + (copied ? "，已复制到剪贴板。" : "，但浏览器未允许自动复制。"), copied ? "ok" : "error");
+              updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个 " + typeLabel + " 卡密" + (copied ? "，已复制到剪贴板。" : "，但浏览器未允许自动复制。"), copied ? "ok" : "error");
             } catch (errCopy) {
-              updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密，但复制到剪贴板失败。", "error");
+              updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个 " + typeLabel + " 卡密，但复制到剪贴板失败。", "error");
             }
           } else {
-            updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个卡密。", "ok");
+            updateStatus("codexCardGenerateStatus", "已生成 " + codes.length + " 个 " + typeLabel + " 卡密。", "ok");
           }
           await loadCards();
         } catch (err) {
@@ -1109,9 +1185,15 @@ const authFileCodexStatsScript = `
     style.textContent = [
       ".auth-file-codex-stats-panel{box-sizing:border-box;width:100%;min-height:76px;margin:0 0 12px;border:1px solid var(--border-color);background:color-mix(in srgb,var(--bg-secondary) 82%,transparent);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:1;box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 5%,transparent)}",
       ".auth-file-codex-stats-title{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap;margin-right:2px}",
-      ".auth-file-codex-stat{min-width:96px;border:1px solid color-mix(in srgb,var(--border-color) 86%,transparent);background:color-mix(in srgb,var(--bg-primary) 72%,transparent);border-radius:10px;padding:9px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}",
+      ".auth-file-codex-stat{min-width:96px;border:1px solid color-mix(in srgb,var(--border-color) 86%,transparent);background:color-mix(in srgb,var(--bg-primary) 72%,transparent);border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px}",
+      ".auth-file-codex-stat-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px}",
       ".auth-file-codex-stat-label{color:var(--text-secondary);font-size:12px;font-weight:800;white-space:nowrap}",
       ".auth-file-codex-stat-value{color:var(--text-primary);font-size:20px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}",
+      ".auth-file-codex-stat-breakdown{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:100%}",
+      ".auth-file-codex-stat-chip{font-size:11px;font-weight:800;line-height:1;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--bg-secondary) 80%,transparent);border:1px solid color-mix(in srgb,var(--border-color) 80%,transparent);color:var(--text-secondary);white-space:nowrap}",
+      ".auth-file-codex-stat-chip.plus{color:#ffb547;border-color:color-mix(in srgb,#ffb547 50%,var(--border-color));background:color-mix(in srgb,#ffb547 12%,transparent)}",
+      ".auth-file-codex-stat-chip.free{color:#7c93b5;border-color:color-mix(in srgb,#7c93b5 50%,var(--border-color));background:color-mix(in srgb,#7c93b5 12%,transparent)}",
+      ".auth-file-codex-stat-chip-value{font-variant-numeric:tabular-nums;font-weight:900;color:var(--text-primary)}",
       ".auth-file-codex-stat.normal .auth-file-codex-stat-value,.auth-file-codex-stat.unextracted .auth-file-codex-stat-value{color:var(--success-color)}",
       ".auth-file-codex-stat.banned .auth-file-codex-stat-value{color:var(--error-color)}",
       ".auth-file-codex-stat.extracted .auth-file-codex-stat-value{color:var(--primary-color)}",
@@ -1464,19 +1546,43 @@ const authFileCodexStatsScript = `
     return !!(file && (file.codex_redeemed || file.codex_extracted || file.redeemed));
   }
 
+  function codexFilePlanType(file) {
+    if (!file) return "";
+    var idToken = file.id_token || file.idToken;
+    var raw = "";
+    if (idToken && typeof idToken === "object") {
+      raw = idToken.plan_type || idToken.planType || idToken.chatgpt_plan_type || "";
+    }
+    if (!raw) raw = file.plan_type || file.planType || file.chatgpt_plan_type || "";
+    return String(raw || "").trim().toLowerCase();
+  }
+
+  function codexFileEffectiveType(file) {
+    var plan = codexFilePlanType(file);
+    if (!plan || plan === "free") return "free";
+    return "plus";
+  }
+
   function statsFromFiles(files) {
-    var stats = {total: 0, normal: 0, banned: 0, unextracted: 0, extracted: 0};
+    var bucket = function () { return {total: 0, plus: 0, free: 0}; };
+    var stats = {
+      total: bucket(), normal: bucket(), banned: bucket(),
+      unextracted: bucket(), extracted: bucket()
+    };
+    function bump(key, type) {
+      stats[key].total += 1;
+      if (type === "plus") stats[key].plus += 1;
+      else stats[key].free += 1;
+    }
     (Array.isArray(files) ? files : []).forEach(function (file) {
       if (!isCodexFile(file)) return;
-      stats.total += 1;
+      var type = codexFileEffectiveType(file);
+      bump("total", type);
       var banned = isBannedFile(file);
-      if (banned) {
-        stats.banned += 1;
-      } else {
-        stats.normal += 1;
-      }
-      if (isExtractedFile(file)) stats.extracted += 1;
-      else if (!banned) stats.unextracted += 1;
+      if (banned) bump("banned", type);
+      else bump("normal", type);
+      if (isExtractedFile(file)) bump("extracted", type);
+      else if (!banned) bump("unextracted", type);
     });
     return stats;
   }
@@ -1484,12 +1590,24 @@ const authFileCodexStatsScript = `
   function normalizeStats(data) {
     var raw = data && (data.codex_auth_stats || data.codexAuthStats);
     if (!raw) return statsFromFiles(data && data.files);
+    // Older backends only provide aggregate numbers without plus/free breakdown.
+    // Always re-compute from files when the file list is available so the
+    // breakdown stays accurate.
+    if (Array.isArray(data && data.files)) return statsFromFiles(data.files);
+    function buildBucket(node) {
+      if (!node || typeof node !== "object") return {total: numberValue(node), plus: 0, free: 0};
+      return {
+        total: numberValue(node.total),
+        plus: numberValue(node.plus),
+        free: numberValue(node.free)
+      };
+    }
     return {
-      total: numberValue(raw.total),
-      normal: numberValue(raw.normal),
-      banned: numberValue(raw.banned),
-      unextracted: raw.unextracted != null ? numberValue(raw.unextracted) : numberValue(raw.unredeemed),
-      extracted: raw.extracted != null ? numberValue(raw.extracted) : numberValue(raw.redeemed)
+      total: buildBucket(raw.total),
+      normal: buildBucket(raw.normal),
+      banned: buildBucket(raw.banned),
+      unextracted: buildBucket(raw.unextracted != null ? raw.unextracted : raw.unredeemed),
+      extracted: buildBucket(raw.extracted != null ? raw.extracted : raw.redeemed)
     };
   }
 
@@ -1509,9 +1627,22 @@ const authFileCodexStatsScript = `
       ["未提取", stats.unextracted, "unextracted", "未提取=状态正常且尚未分配给用户"],
       ["已提取", stats.extracted, "extracted", "已提取=已分配给用户"]
     ];
-    panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计' + (loading ? ' · 更新中' : '') + '</div>' + items.map(function (item) {
-      return '<div class="auth-file-codex-stat ' + item[2] + '"' + (item[3] ? ' title="' + escapeHTML(item[3]) + '"' : '') + '><span class="auth-file-codex-stat-label">' + escapeHTML(item[0]) + '</span><span class="auth-file-codex-stat-value">' + escapeHTML(item[1]) + '</span></div>';
-    }).join("");
+    function renderItem(item) {
+      var bucket = item[1] || {total: 0, plus: 0, free: 0};
+      var titleAttr = item[3] ? ' title="' + escapeHTML(item[3]) + '"' : '';
+      return '<div class="auth-file-codex-stat ' + item[2] + '"' + titleAttr + '>' +
+        '<div class="auth-file-codex-stat-head"><span class="auth-file-codex-stat-label">' + escapeHTML(item[0]) + '</span><span class="auth-file-codex-stat-value">' + escapeHTML(bucket.total || 0) + '</span></div>' +
+        '<div class="auth-file-codex-stat-breakdown">' +
+          '<span class="auth-file-codex-stat-chip plus" title="Plus">Plus <span class="auth-file-codex-stat-chip-value">' + escapeHTML(bucket.plus || 0) + '</span></span>' +
+          '<span class="auth-file-codex-stat-chip free" title="Free">Free <span class="auth-file-codex-stat-chip-value">' + escapeHTML(bucket.free || 0) + '</span></span>' +
+        '</div></div>';
+    }
+    panel.innerHTML = '<div class="auth-file-codex-stats-title">Codex账号统计' + (loading ? ' · 更新中' : '') + '</div>' + items.map(renderItem).join("");
+  }
+
+  function emptyStatsShape() {
+    var bucket = function () { return {total: 0, plus: 0, free: 0}; };
+    return {total: bucket(), normal: bucket(), banned: bucket(), unextracted: bucket(), extracted: bucket()};
   }
 
   function ensurePanel() {
@@ -1531,7 +1662,7 @@ const authFileCodexStatsScript = `
       panel.className = "auth-file-codex-stats-panel";
       panel.style.gridColumn = "1 / -1";
       panel.dataset.codexStatsLoaded = "0";
-      renderPanel(panel, {total: 0, normal: 0, banned: 0, unextracted: 0, extracted: 0}, true);
+      renderPanel(panel, emptyStatsShape(), true);
       var parent = controls.parentElement;
       if (parent && parent !== controls) {
         parent.insertBefore(panel, controls);
