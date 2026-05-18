@@ -198,11 +198,21 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		vvName := string(m[1])
 		bvName := string(m[2])
 		if vvName != "Vv" || bvName != "Bv" {
+			// Two-phase rename via unique sentinels avoids the case where
+			// renaming `Vv→Bv` would then be clobbered by the subsequent
+			// `Bv→...` rename (e.g. when the new Vv name happens to equal
+			// the old Bv name).
+			const vvSentinel = "\x00__VV_SENT__\x00"
+			const bvSentinel = "\x00__BV_SENT__\x00"
 			for i := range replacements {
-				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Vv", vvName)
-				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Vv", vvName)
-				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Bv", bvName)
-				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Bv", bvName)
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Vv", vvSentinel)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Vv", vvSentinel)
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Bv", bvSentinel)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Bv", bvSentinel)
+				replacements[i].old = strings.ReplaceAll(replacements[i].old, vvSentinel, vvName)
+				replacements[i].new = strings.ReplaceAll(replacements[i].new, vvSentinel, vvName)
+				replacements[i].old = strings.ReplaceAll(replacements[i].old, bvSentinel, bvName)
+				replacements[i].new = strings.ReplaceAll(replacements[i].new, bvSentinel, bvName)
 			}
 		}
 	}
@@ -249,6 +259,20 @@ func patchQuotaManagementPanel(data []byte) []byte {
 			for i := range replacements {
 				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Sg", sgName)
 				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Sg", sgName)
+			}
+		}
+	}
+
+	// The search-regex helper (originally `Yx`) may be re-minified. Detect
+	// its actual name from the `ft=useMemo(()=>NAME(dt),...)` call site and
+	// rewrite patches that reference it (e.g. card-batch search override).
+	searchHelperRE := regexp.MustCompile(`,ft=\(0,y\.useMemo\)\(\(\)=>([A-Za-z_$][\w$]*)\(dt\),\[dt\]\)`)
+	if m := searchHelperRE.FindSubmatch(patched); len(m) == 2 {
+		yxName := string(m[1])
+		if yxName != "Yx" {
+			for i := range replacements {
+				replacements[i].old = renameQuotaPanelIdent(replacements[i].old, "Yx", yxName)
+				replacements[i].new = renameQuotaPanelIdent(replacements[i].new, "Yx", yxName)
 			}
 		}
 	}
@@ -400,7 +424,7 @@ func patchAuthFilesFilterFallback(data []byte) []byte {
 	}
 	// Match the unmodified ct=(0,y.useMemo)(()=>I.filter(e=>!(l&&!XX(e)||d&&e.disabled!==!0)),[d,I,l])
 	// pattern, capturing the problem-detector identifier (Vv / Uv / etc.).
-	ctRE := regexp.MustCompile(`ct=\(0,y\.useMemo\)\(\(\)=>I\.filter\(e=>!\(l&&!(\w+)\(e\)\|\|d&&e\.disabled!==!0\)\),\[d,I,l\]\)`)
+	ctRE := regexp.MustCompile(`ct=\(0,y\.useMemo\)\(\(\)=>I\.filter\(e=>!\(l&&!([\w$]+)\(e\)\|\|d&&e\.disabled!==!0\)\),\[d,I,l\]\)`)
 	loc := ctRE.FindSubmatchIndex(data)
 	if loc == nil {
 		return data
@@ -442,7 +466,7 @@ func patchAuthFilesSearchFallback(data []byte) []byte {
 		return data
 	}
 	bt := "`"
-	pattern := `dt=h\.trim\(\),ft=\(0,y\.useMemo\)\(\(\)=>(\w+)\(dt\),\[dt\]\),pt=\(0,y\.useMemo\)\(\(\)=>\{let e=dt\.toLowerCase\(\);return ct\.filter\(t=>\{let n=(\w+)\(String\(t\.type\?\?t\.provider\?\?` + bt + bt + `\)\),r=(\$?\w+)===` + bt + `all` + bt + `\|\|n===(\$?\w+),i=!dt\|\|\[t\.name,t\.type,t\.provider\]\.some\(t=>\{let n=\(t\|\|` + bt + bt + `\)\.toString\(\);return ft\?ft\.test\(n\):n\.toLowerCase\(\)\.includes\(e\)\}\);return r&&i\}\)\},\[ct,(\$?\w+),dt,ft\]\)`
+	pattern := `dt=h\.trim\(\),ft=\(0,y\.useMemo\)\(\(\)=>([\w$]+)\(dt\),\[dt\]\),pt=\(0,y\.useMemo\)\(\(\)=>\{let e=dt\.toLowerCase\(\);return ct\.filter\(t=>\{let n=([\w$]+)\(String\(t\.type\?\?t\.provider\?\?` + bt + bt + `\)\),r=([\w$]+)===` + bt + `all` + bt + `\|\|n===([\w$]+),i=!dt\|\|\[t\.name,t\.type,t\.provider\]\.some\(t=>\{let n=\(t\|\|` + bt + bt + `\)\.toString\(\);return ft\?ft\.test\(n\):n\.toLowerCase\(\)\.includes\(e\)\}\);return r&&i\}\)\},\[ct,([\w$]+),dt,ft\]\)`
 	re := regexp.MustCompile(pattern)
 	loc := re.FindSubmatchIndex(data)
 	if loc == nil {
