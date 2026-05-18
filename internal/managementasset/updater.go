@@ -28,6 +28,7 @@ const (
 	defaultManagementReleaseURL  = "https://api.github.com/repos/router-for-me/Cli-Proxy-API-Management-Center/releases/latest"
 	defaultManagementFallbackURL = "https://cpamc.router-for.me/"
 	managementAssetName          = "management.html"
+	codexExtractionAssetName     = "codex-extract.html"
 	httpUserAgent                = "CLIProxyAPI-management-updater"
 	managementSyncMinInterval    = 30 * time.Second
 	updateCheckInterval          = 3 * time.Hour
@@ -36,6 +37,9 @@ const (
 
 // ManagementFileName exposes the control panel asset filename.
 const ManagementFileName = managementAssetName
+
+// CodexExtractionFileName exposes the standalone codex extraction asset filename.
+const CodexExtractionFileName = codexExtractionAssetName
 
 var (
 	lastUpdateCheckMu   sync.Mutex
@@ -97,6 +101,7 @@ func runAutoUpdater(ctx context.Context) {
 		configPath, _ := schedulerConfigPath.Load().(string)
 		staticDir := StaticDir(configPath)
 		EnsureLatestManagementHTML(ctx, staticDir, cfg.ProxyURL, cfg.RemoteManagement.PanelGitHubRepository)
+		EnsureLatestCodexExtractionHTML(ctx, staticDir, cfg.ProxyURL, cfg.RemoteManagement.PanelGitHubRepository)
 	}
 
 	runOnce()
@@ -281,6 +286,70 @@ func EnsureLatestManagementHTML(ctx context.Context, staticDir string, proxyURL 
 	return err == nil
 }
 
+// EnsureLatestCodexExtractionHTML mirrors EnsureLatestManagementHTML for the
+// standalone codex-extract.html asset published alongside management.html.
+// It silently skips when the asset isn't available in the configured release
+// (older upstream releases shipped only management.html); callers fall back
+// to the inline HTML constant in that case.
+func EnsureLatestCodexExtractionHTML(ctx context.Context, staticDir string, proxyURL string, panelRepository string) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	staticDir = strings.TrimSpace(staticDir)
+	if staticDir == "" {
+		return false
+	}
+	localPath := filepath.Join(staticDir, codexExtractionAssetName)
+
+	_, _, _ = sfGroup.Do(localPath, func() (interface{}, error) {
+		if errMkdirAll := os.MkdirAll(staticDir, 0o755); errMkdirAll != nil {
+			log.WithError(errMkdirAll).Debug("failed to prepare static directory for codex-extract asset")
+			return nil, nil
+		}
+
+		releaseURL := resolveReleaseURL(panelRepository)
+		client := newHTTPClient(proxyURL)
+
+		localHash, errHash := fileSHA256(localPath)
+		if errHash != nil {
+			localHash = ""
+		}
+
+		asset, remoteHash, err := fetchLatestAssetByName(ctx, client, releaseURL, codexExtractionAssetName)
+		if err != nil {
+			log.WithError(err).Debug("codex-extract asset not available in latest release (this is fine; the server falls back to the inline page)")
+			return nil, nil
+		}
+
+		if remoteHash != "" && localHash != "" && strings.EqualFold(remoteHash, localHash) {
+			return nil, nil
+		}
+
+		data, downloadedHash, err := downloadAsset(ctx, client, asset.BrowserDownloadURL)
+		if err != nil {
+			log.WithError(err).Warn("failed to download codex-extract asset")
+			return nil, nil
+		}
+
+		if remoteHash != "" && !strings.EqualFold(remoteHash, downloadedHash) {
+			log.Errorf("codex-extract asset digest mismatch: expected %s got %s — aborting update", remoteHash, downloadedHash)
+			return nil, nil
+		}
+
+		if err = atomicWriteFile(localPath, data); err != nil {
+			log.WithError(err).Warn("failed to update codex-extract asset on disk")
+			return nil, nil
+		}
+
+		log.Infof("codex-extract asset updated successfully (hash=%s)", downloadedHash)
+		return nil, nil
+	})
+
+	_, statErr := os.Stat(localPath)
+	return statErr == nil
+}
+
 func ensureFallbackManagementHTML(ctx context.Context, client *http.Client, localPath string) bool {
 	data, downloadedHash, err := downloadAsset(ctx, client, defaultManagementFallbackURL)
 	if err != nil {
@@ -333,6 +402,14 @@ func resolveReleaseURL(repo string) string {
 }
 
 func fetchLatestAsset(ctx context.Context, client *http.Client, releaseURL string) (*releaseAsset, string, error) {
+	return fetchLatestAssetByName(ctx, client, releaseURL, managementAssetName)
+}
+
+// fetchLatestAssetByName looks up a named asset in the latest release at
+// releaseURL. Pulled out so callers (management.html, codex-extract.html, …)
+// can share the same release fetch path while still reporting which asset
+// they care about.
+func fetchLatestAssetByName(ctx context.Context, client *http.Client, releaseURL string, assetName string) (*releaseAsset, string, error) {
 	if strings.TrimSpace(releaseURL) == "" {
 		releaseURL = defaultManagementReleaseURL
 	}
@@ -368,13 +445,13 @@ func fetchLatestAsset(ctx context.Context, client *http.Client, releaseURL strin
 
 	for i := range release.Assets {
 		asset := &release.Assets[i]
-		if strings.EqualFold(asset.Name, managementAssetName) {
+		if strings.EqualFold(asset.Name, assetName) {
 			remoteHash := parseDigest(asset.Digest)
 			return asset, remoteHash, nil
 		}
 	}
 
-	return nil, "", fmt.Errorf("management asset %s not found in latest release", managementAssetName)
+	return nil, "", fmt.Errorf("asset %s not found in latest release", assetName)
 }
 
 func downloadAsset(ctx context.Context, client *http.Client, downloadURL string) ([]byte, string, error) {

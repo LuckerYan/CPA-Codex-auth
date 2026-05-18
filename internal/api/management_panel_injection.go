@@ -28,6 +28,12 @@ func injectCodexCardManagementPanel(data []byte) []byte {
 	if len(data) == 0 {
 		return data
 	}
+	// If the bundle already ships the auth-files patches natively (i.e. comes
+	// from the forked source with the in-tree React implementation), skip the
+	// legacy monkey-patches so they don't conflict with the native rendering.
+	if bytes.Contains(data, []byte("__CPAMC_NATIVE_AUTHFILES_V1__")) {
+		return data
+	}
 	data = patchQuotaManagementPanel(data)
 	data = injectManagementPanelScript(data, "codex-card-management-injection", codexCardManagementPanelScript)
 	data = injectManagementPanelScript(data, "auth-file-codex-stats-injection", authFileCodexStatsScript)
