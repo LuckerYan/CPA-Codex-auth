@@ -131,7 +131,7 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		},
 		{
 			old: "dt=h.trim(),ft=(0,y.useMemo)(()=>Yx(dt),[dt]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r})},[ct,s,dt,ft]),mt=",
-			new: "dt=h.trim(),cardBatchSearchMarker=`__codex_card_batch__=`,cardBatchTerms=dt.startsWith(cardBatchSearchMarker)?dt.slice(cardBatchSearchMarker.length).split(`|||`).map(e=>{try{return decodeURIComponent(e).trim().toLowerCase()}catch(t){return e.trim().toLowerCase()}}).filter(Boolean):null,ft=(0,y.useMemo)(()=>cardBatchTerms?null:Yx(dt),[dt,cardBatchTerms]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||(cardBatchTerms?cardBatchTerms.some(e=>[t.name,t.id,t.path,t.email,t.account].some(t=>{let n=String(t||``).toLowerCase();return n===e||n.includes(e)})):[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)}));return n&&r})},[ct,s,dt,ft,cardBatchTerms]),mt=",
+			new: "dt=h.trim(),cardBatchSearchMarker=`__codex_card_batch__=`,cardBatchTerms=dt.startsWith(cardBatchSearchMarker)?dt.slice(cardBatchSearchMarker.length).split(`|||`).map(e=>{try{return decodeURIComponent(e).trim().toLowerCase()}catch(t){return e.trim().toLowerCase()}}).filter(Boolean):null,ft=(0,y.useMemo)(()=>cardBatchTerms?null:Yx(dt),[dt,cardBatchTerms]),pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{let n=s===`all`||t.type===s,r=!dt||(cardBatchTerms?cardBatchTerms.some(e=>[t.name,t.id,t.path,t.email,t.account,t.file_name,t.fileName,t.file_path,t.filePath].some(t=>{let n=String(t||``).toLowerCase();return!!n&&(n===e||n.indexOf(e)>=0||e.indexOf(n)>=0)})):[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)}));return n&&r})},[ct,s,dt,ft,cardBatchTerms]),mt=",
 		},
 		{
 			old: "(0,B.jsx)(`label`,{children:e(`auth_files.search_label`)})",
@@ -211,6 +211,7 @@ func patchQuotaManagementPanel(data []byte) []byte {
 		patched = bytes.Replace(patched, []byte(replacement.old), []byte(replacement.new), 1)
 	}
 	patched = patchAuthFilesFilterFallback(patched)
+	patched = patchAuthFilesSearchFallback(patched)
 	return patched
 }
 
@@ -254,6 +255,53 @@ func patchAuthFilesFilterFallback(data []byte) []byte {
 	out = append(out, rewritten[:idx]...)
 	out = append(out, helpers...)
 	out = append(out, rewritten[idx:]...)
+	return out
+}
+
+// patchAuthFilesSearchFallback handles the case where the upstream React bundle
+// renamed the search-related identifiers (Yx/Zx for the regex builder, s/$e for
+// the filter selection state) so the literal pt useMemo patch above stops
+// matching. It detects the unmodified pt useMemo via a regex that captures the
+// dynamic identifiers, then rewrites it to honour the __codex_card_batch__ token
+// when set by the card-code-search helper.
+func patchAuthFilesSearchFallback(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	if bytes.Contains(data, []byte("cardBatchSearchMarker=`__codex_card_batch__=`")) {
+		return data
+	}
+	bt := "`"
+	pattern := `dt=h\.trim\(\),ft=\(0,y\.useMemo\)\(\(\)=>(\w+)\(dt\),\[dt\]\),pt=\(0,y\.useMemo\)\(\(\)=>\{let e=dt\.toLowerCase\(\);return ct\.filter\(t=>\{let n=(\w+)\(String\(t\.type\?\?t\.provider\?\?` + bt + bt + `\)\),r=(\$?\w+)===` + bt + `all` + bt + `\|\|n===(\$?\w+),i=!dt\|\|\[t\.name,t\.type,t\.provider\]\.some\(t=>\{let n=\(t\|\|` + bt + bt + `\)\.toString\(\);return ft\?ft\.test\(n\):n\.toLowerCase\(\)\.includes\(e\)\}\);return r&&i\}\)\},\[ct,(\$?\w+),dt,ft\]\)`
+	re := regexp.MustCompile(pattern)
+	loc := re.FindSubmatchIndex(data)
+	if loc == nil {
+		return data
+	}
+	yxName := string(data[loc[2]:loc[3]])
+	vvName := string(data[loc[4]:loc[5]])
+	sName1 := string(data[loc[6]:loc[7]])
+	sName2 := string(data[loc[8]:loc[9]])
+	sName3 := string(data[loc[10]:loc[11]])
+	if sName1 != sName2 || sName1 != sName3 {
+		return data
+	}
+	sName := sName1
+	replacement := []byte(
+		"dt=h.trim(),cardBatchSearchMarker=" + bt + "__codex_card_batch__=" + bt + "," +
+			"cardBatchTerms=dt.startsWith(cardBatchSearchMarker)?dt.slice(cardBatchSearchMarker.length).split(" + bt + "|||" + bt + ").map(e=>{try{return decodeURIComponent(e).trim().toLowerCase()}catch(t){return e.trim().toLowerCase()}}).filter(Boolean):null," +
+			"ft=(0,y.useMemo)(()=>cardBatchTerms?null:" + yxName + "(dt),[dt,cardBatchTerms])," +
+			"pt=(0,y.useMemo)(()=>{let e=dt.toLowerCase();return ct.filter(t=>{" +
+			"let n=" + vvName + "(String(t.type??t.provider??" + bt + bt + "))," +
+			"r=" + sName + "===" + bt + "all" + bt + "||n===" + sName + "," +
+			"i=!dt||(cardBatchTerms?cardBatchTerms.some(e=>[t.name,t.id,t.path,t.email,t.account,t.file_name,t.fileName,t.file_path,t.filePath].some(t=>{let n=String(t||" + bt + bt + ").toLowerCase();return!!n&&(n===e||n.indexOf(e)>=0||e.indexOf(n)>=0)})):" +
+			"[t.name,t.type,t.provider].some(t=>{let n=(t||" + bt + bt + ").toString();return ft?ft.test(n):n.toLowerCase().includes(e)}));" +
+			"return r&&i})},[ct," + sName + ",dt,ft,cardBatchTerms])",
+	)
+	out := make([]byte, 0, len(data)+len(replacement))
+	out = append(out, data[:loc[0]]...)
+	out = append(out, replacement...)
+	out = append(out, data[loc[1]:]...)
 	return out
 }
 

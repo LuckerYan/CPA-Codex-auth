@@ -162,8 +162,8 @@ func TestPatchAuthFilesSearchSupportsCodexCardBatchMarker(t *testing.T) {
 	assertContains(t, patched, "cardBatchSearchMarker=`__codex_card_batch__=`")
 	assertContains(t, patched, "cardBatchTerms=dt.startsWith(cardBatchSearchMarker)")
 	assertContains(t, patched, "decodeURIComponent(e)")
-	assertContains(t, patched, "[t.name,t.id,t.path,t.email,t.account]")
-	assertContains(t, patched, "n===e||n.includes(e)")
+	assertContains(t, patched, "[t.name,t.id,t.path,t.email,t.account,t.file_name,t.fileName,t.file_path,t.filePath]")
+	assertContains(t, patched, "n===e||n.indexOf(e)>=0||e.indexOf(n)>=0")
 	assertNotContains(t, patched, "[t.name,t.type,t.provider].some(t=>{let n=(t||``).toString();return ft?ft.test(n):n.toLowerCase().includes(e)});return n&&r")
 }
 
