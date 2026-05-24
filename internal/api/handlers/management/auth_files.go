@@ -407,6 +407,11 @@ func (h *Handler) buildAuthFileEntry(auth *coreauth.Auth) gin.H {
 	} else if coreauth.AccountStatus(auth) == coreauth.StatusBanned && strings.TrimSpace(auth.StatusMessage) != "" {
 		entry["account_status_message"] = strings.TrimSpace(auth.StatusMessage)
 	}
+	if coreauth.AccountStatus(auth) == coreauth.StatusBanned && strings.TrimSpace(auth.StatusMessage) == "" {
+		if msg, ok := entry["account_status_message"].(string); ok && strings.TrimSpace(msg) != "" {
+			entry["status_message"] = msg
+		}
+	}
 	entry["success"] = auth.Success
 	entry["failed"] = auth.Failed
 	entry["recent_requests"] = auth.RecentRequestsSnapshot(time.Now())
@@ -537,6 +542,9 @@ func (h *Handler) annotateCodexAuthExtractionStatus(entry gin.H, auth *coreauth.
 		entry["codex_extraction_status"] = codexCardStatusRedeemed
 	} else {
 		entry["codex_extraction_status"] = codexCardStatusUnused
+	}
+	if planType := codexAuthPlanType(auth.Metadata); planType != "" {
+		entry["plan_type"] = planType
 	}
 }
 
@@ -978,6 +986,10 @@ func (h *Handler) writeAuthFile(ctx context.Context, name string, data []byte) e
 	}
 	if err := h.upsertAuthRecord(ctx, auth); err != nil {
 		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
+		authID := auth.ID
+		go h.fetchAndPersistCodexPlanType(context.Background(), authID)
 	}
 	return nil
 }

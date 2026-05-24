@@ -208,8 +208,15 @@ func (h *Handler) APICall(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read response"})
 		return
 	}
-	if auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") && coreauth.IsAuthenticationTokenInvalidated(resp.StatusCode, string(respBody)) {
-		h.markAuthBanned(c.Request.Context(), auth.ID, coreauth.TokenInvalidatedMessage(string(respBody)))
+	if auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
+		if coreauth.IsAuthenticationTokenInvalidated(resp.StatusCode, string(respBody)) {
+			h.markAuthBanned(c.Request.Context(), auth.ID, coreauth.TokenInvalidatedMessage(string(respBody)))
+		} else if resp.StatusCode >= 200 && resp.StatusCode < 300 && isCodexUsageEndpoint(urlStr) {
+			if planType := extractCodexPlanTypeFromUsageBody(respBody); planType != "" {
+				authSnapshot := auth
+				go h.persistCodexPlanType(context.Background(), authSnapshot, planType)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, apiCallResponse{
